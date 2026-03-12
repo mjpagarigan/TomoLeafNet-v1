@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/iamha/Development/TOMOLEAFNET-v1/MOBILE_APP/ios -name *.entitlements -o -name *.plist)"
+    ]
+  }
+}
