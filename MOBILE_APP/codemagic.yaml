@@ -1,0 +1,90 @@
+workflows:
+  ios-release:
+    name: iOS Release (TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.tomoleafnet.tomoleafnetMobile
+
+    scripts:
+      - name: Set Flutter version
+        script: flutter --version
+
+      - name: Install dependencies
+        script: |
+          cd MOBILE_APP
+          flutter pub get
+
+      - name: Install CocoaPods dependencies
+        script: |
+          cd MOBILE_APP/ios
+          pod install
+
+      - name: Build iOS release
+        script: |
+          cd MOBILE_APP
+          flutter build ios --release \
+            --build-name=1.0.0 \
+            --build-number=$(($(date +%s)))
+
+      - name: Package .ipa
+        script: |
+          cd MOBILE_APP/build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/Runner.app
+          zip -r Runner.ipa Payload
+
+    artifacts:
+      - MOBILE_APP/build/ios/iphoneos/Runner.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        expire_build_days: 20
+
+  ios-unsigned:
+    name: iOS Unsigned (Sideload)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+
+    scripts:
+      - name: Install dependencies
+        script: |
+          cd MOBILE_APP
+          flutter pub get
+
+      - name: Install CocoaPods dependencies
+        script: |
+          cd MOBILE_APP/ios
+          pod install
+
+      - name: Build iOS unsigned release
+        script: |
+          cd MOBILE_APP
+          flutter build ios --release --no-codesign \
+            --build-name=1.0.0 \
+            --build-number=$(($(date +%s)))
+
+      - name: Package unsigned .ipa
+        script: |
+          cd MOBILE_APP/build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/Runner.app
+          zip -r Runner-unsigned.ipa Payload
+
+    artifacts:
+      - MOBILE_APP/build/ios/iphoneos/Runner-unsigned.ipa
+      - /tmp/xcodebuild_logs/*.log
