@@ -1,4 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Camera access for capturing leaf images -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Internet access for Google Fonts and potential API calls -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Storage access for image picker on Android 12 and below -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <!-- Media access for image picker on Android 13+ -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <application
         android:label="tomoleafnet_mobile"
         android:name="${applicationName}"
