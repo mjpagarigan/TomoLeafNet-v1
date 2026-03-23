@@ -1,7 +1,26 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find /c/Users/iamha/Development/TOMOLEAFNET-v1/MOBILE_APP/ios -name *.entitlements -o -name *.plist)"
+      "Bash(find /c/Users/iamha/Development/TOMOLEAFNET-v1/MOBILE_APP/ios -name *.entitlements -o -name *.plist)",
+      "Bash(flutter doctor:*)",
+      "Bash(dart --version)",
+      "Bash(java -version)",
+      "Bash(git --version)",
+      "Bash(where android-studio:*)",
+      "Read(//c/Program Files/Android/**)",
+      "Read(//c/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/$LOCALAPPDATA/**)",
+      "Bash(winget --version)",
+      "Bash(\"C:/Program Files/Android/Android Studio/jbr/bin/java\" -version)",
+      "Bash(winget search:*)",
+      "Read(//c/development/**)",
+      "Read(//c//**)",
+      "Read(//c/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/$HOME/**)",
+      "Bash(git clone:*)",
+      "Bash(export PATH=\"C:/flutter/bin:$PATH\")",
+      "Bash(flutter --version)",
+      "Read(//c/flutter/bin/**)",
+      "Bash(\"C:/flutter/bin/flutter.bat\" --version)",
+      "Bash(\"C:/flutter/bin/flutter.bat\" config:*)"
     ]
   }
 }

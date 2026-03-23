@@ -278,7 +278,7 @@ class _ResultScreenState extends State<ResultScreen> {
               child: _isLoading 
                 ? Container(
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.5),
+                      color: Colors.black.withAlpha(128),
                       borderRadius: const BorderRadius.only(
                         bottomLeft: Radius.circular(30),
                         bottomRight: Radius.circular(30),
@@ -312,7 +312,7 @@ class _ResultScreenState extends State<ResultScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.2),
+                        color: Colors.red.withAlpha(51),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: Colors.red),
                       ),
@@ -340,7 +340,7 @@ class _ResultScreenState extends State<ResultScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: _confidence > 0.7 ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
+                            color: _confidence > 0.7 ? Colors.green.withAlpha(51) : Colors.orange.withAlpha(51),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(color: _confidence > 0.7 ? Colors.green : Colors.orange)
                           ),

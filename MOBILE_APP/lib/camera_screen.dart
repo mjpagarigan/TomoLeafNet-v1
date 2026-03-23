@@ -151,13 +151,9 @@ class _CameraScreenState extends State<CameraScreen> {
                          width: 40, height: 40,
                          decoration: BoxDecoration(
                            borderRadius: BorderRadius.circular(8),
-                           image: const DecorationImage(
-                             image: AssetImage('assets/leaf_icon_placeholder.png'), // Need a placeholder asset?
-                             fit: BoxFit.cover
-                           ),
-                           color: Colors.grey
+                           color: Colors.green.withAlpha(50),
                          ),
-                         child: const Icon(Icons.eco, color: Colors.white), 
+                         child: const Icon(Icons.eco, color: Colors.green),
                        ),
                        const SizedBox(width: 15),
                        Expanded(
