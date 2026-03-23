@@ -40,15 +40,15 @@ print(f"✅ Number of classes: {len(class_names)}")
 train_ds = train_ds.map(lambda x, y: (tf.image.random_crop(x, size=(tf.shape(x)[0], IMG_SIZE[0], IMG_SIZE[1], 3)), y))
 val_ds = val_ds.map(lambda x, y: (tf.image.resize_with_crop_or_pad(x, IMG_SIZE[0], IMG_SIZE[1]), y))
 
-# Data augmentation (tuned to avoid over-distortion on small dataset)
+# Data augmentation (aggressive — simulate real-world mobile captures)
 augment = tf.keras.Sequential([
-    layers.RandomFlip("horizontal"),              # horizontal only (leaves don't appear upside-down)
-    layers.RandomRotation(0.15),                  # +/-27 deg (was +/-54)
-    layers.RandomZoom((-0.15, 0.05)),             # gentler zoom range
-    layers.RandomTranslation(0.1, 0.1),           # shift image
-    layers.RandomContrast(0.15),                  # halved from 0.3
-    layers.RandomBrightness(0.15),                # halved from 0.3
-    layers.GaussianNoise(0.1),                    # camera noise simulation
+    layers.RandomFlip("horizontal_and_vertical"), # phone photos come at any orientation
+    layers.RandomRotation(0.25),                  # +/-45 deg (phone held at various angles)
+    layers.RandomZoom((-0.3, 0.15)),              # wider zoom range (variable capture distance)
+    layers.RandomTranslation(0.2, 0.2),           # leaf often off-center in real photos
+    layers.RandomContrast(0.3),                   # outdoor lighting varies significantly
+    layers.RandomBrightness(0.3),                 # shadows and direct sunlight
+    layers.GaussianNoise(0.15),                   # camera sensor noise + compression artifacts
 ])
 
 # --- BUILDING THE HYBRID MODEL ---

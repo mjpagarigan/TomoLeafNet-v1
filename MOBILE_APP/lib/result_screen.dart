@@ -45,7 +45,7 @@ class _ResultScreenState extends State<ResultScreen> {
       ],
     },
     'Healthy': {
-      'displayName': 'Healthy Leaf ✅',
+      'displayName': 'Healthy Leaf',
       'about': 'This tomato leaf appears healthy with no signs of disease. The leaf shows normal color and structure.',
       'tips': [
         {'icon': Icons.water_drop, 'text': 'Continue regular watering schedule.'},
@@ -88,7 +88,7 @@ class _ResultScreenState extends State<ResultScreen> {
   Future<Float32List> _preprocessImage(String imagePath) async {
     // Read the image file
     final bytes = await File(imagePath).readAsBytes();
-    
+
     // Step 1: Decode at ORIGINAL size first (for center crop)
     final originalCodec = await ui.instantiateImageCodec(bytes);
     final originalFrame = await originalCodec.getNextFrame();
@@ -146,8 +146,6 @@ class _ResultScreenState extends State<ResultScreen> {
       }
     }
 
-
-
     print("Preprocessed buffer: length=${inputBuffer.length}, "
         "first 6 values=[${inputBuffer[0].toStringAsFixed(1)}, ${inputBuffer[1].toStringAsFixed(1)}, ${inputBuffer[2].toStringAsFixed(1)}, "
         "${inputBuffer[3].toStringAsFixed(1)}, ${inputBuffer[4].toStringAsFixed(1)}, ${inputBuffer[5].toStringAsFixed(1)}]");
@@ -160,13 +158,13 @@ class _ResultScreenState extends State<ResultScreen> {
       // 1. Load Model
       print("Loading TFLite model...");
       _interpreter = await Interpreter.fromAsset('assets/tomoleafnet_v3.tflite');
-      
+
       // Print model details for debugging
       final inputTensor = _interpreter!.getInputTensors()[0];
       final outputTensor = _interpreter!.getOutputTensors()[0];
       print("Input shape: ${inputTensor.shape}, type: ${inputTensor.type}");
       print("Output shape: ${outputTensor.shape}, type: ${outputTensor.type}");
-      
+
       // 2. Load Labels
       final labelData = await rootBundle.loadString('assets/labels.txt');
       _labels = labelData.split('\n').where((s) => s.trim().isNotEmpty).toList();
@@ -187,11 +185,11 @@ class _ResultScreenState extends State<ResultScreen> {
       print("Running inference...");
       _interpreter!.run(input, output);
 
-      // 7. Get results
+      // 7. Get results — argmax across all class probabilities
       final probabilities = output[0] as List<double>;
       print("Raw output: $probabilities");
 
-      // Find the class with the highest probability
+      // Find the class with the highest probability (argmax)
       double maxProb = probabilities[0];
       int maxIndex = 0;
       for (int i = 1; i < probabilities.length; i++) {
@@ -224,7 +222,7 @@ class _ResultScreenState extends State<ResultScreen> {
       }
     }
   }
-  
+
   @override
   void dispose() {
     _interpreter?.close();
@@ -241,10 +239,36 @@ class _ResultScreenState extends State<ResultScreen> {
     return _diseaseInfo[label];
   }
 
+  // --- Confidence helpers ---
+
+  String _getConfidenceLabel(double confidence) {
+    if (confidence >= 0.80) return "High Confidence";
+    if (confidence >= 0.60) return "Moderate Confidence";
+    if (confidence >= 0.40) return "Low Confidence";
+    return "Very Low Confidence";
+  }
+
+  Color _getConfidenceColor(double confidence) {
+    if (confidence >= 0.80) return const Color(0xFF4CAF50); // Green
+    if (confidence >= 0.60) return const Color(0xFFFF9800); // Orange
+    if (confidence >= 0.40) return const Color(0xFFFFC107); // Yellow/Amber
+    return const Color(0xFFF44336); // Red
+  }
+
+  IconData _getConfidenceIcon(double confidence) {
+    if (confidence >= 0.80) return Icons.check_circle;
+    if (confidence >= 0.60) return Icons.info;
+    if (confidence >= 0.40) return Icons.warning_amber_rounded;
+    return Icons.error_outline;
+  }
+
   @override
   Widget build(BuildContext context) {
     final diseaseData = _getDiseaseInfo(_label);
-    
+    final confidenceColor = _getConfidenceColor(_confidence);
+    final confidenceLabel = _getConfidenceLabel(_confidence);
+    final confidenceIcon = _getConfidenceIcon(_confidence);
+
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
@@ -275,7 +299,7 @@ class _ResultScreenState extends State<ResultScreen> {
                   bottomRight: Radius.circular(30),
                 ),
               ),
-              child: _isLoading 
+              child: _isLoading
                 ? Container(
                     decoration: BoxDecoration(
                       color: Colors.black.withAlpha(128),
@@ -298,7 +322,7 @@ class _ResultScreenState extends State<ResultScreen> {
                   )
                 : null,
             ),
-            
+
             const SizedBox(height: 20),
 
             // --- Result Card ---
@@ -323,7 +347,8 @@ class _ResultScreenState extends State<ResultScreen> {
                     ),
                     const SizedBox(height: 10),
                   ],
-                  
+
+                  // Disease name
                   Text(
                     _isLoading ? "Identifying..." : _getDisplayName(_label),
                     style: GoogleFonts.poppins(
@@ -332,31 +357,94 @@ class _ResultScreenState extends State<ResultScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  
+
                   if (!_isLoading) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _confidence > 0.7 ? Colors.green.withAlpha(51) : Colors.orange.withAlpha(51),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: _confidence > 0.7 ? Colors.green : Colors.orange)
+                    const SizedBox(height: 16),
+
+                    // --- Confidence Card ---
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: confidenceColor.withAlpha(25),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: confidenceColor.withAlpha(80)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Confidence label with icon
+                          Row(
+                            children: [
+                              Icon(confidenceIcon, color: confidenceColor, size: 22),
+                              const SizedBox(width: 8),
+                              Text(
+                                confidenceLabel,
+                                style: GoogleFonts.poppins(
+                                  color: confidenceColor,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
-                          child: Text(
-                            "Confidence: ${(_confidence * 100).toStringAsFixed(1)}%",
-                            style: GoogleFonts.poppins(
-                              color: _confidence > 0.7 ? Colors.green : Colors.orange,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600
+                          const SizedBox(height: 12),
+
+                          // Progress bar
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: LinearProgressIndicator(
+                              value: _confidence,
+                              minHeight: 10,
+                              backgroundColor: Colors.white.withAlpha(25),
+                              valueColor: AlwaysStoppedAnimation<Color>(confidenceColor),
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 8),
+
+                          // Raw percentage (secondary, de-emphasized)
+                          Text(
+                            "${(_confidence * 100).toStringAsFixed(1)}% match",
+                            style: GoogleFonts.poppins(
+                              color: Colors.grey[500],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    
-                    const SizedBox(height: 30),
+
+                    // --- Retake prompt for very low confidence ---
+                    if (_confidence < 0.40) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF44336).withAlpha(20),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFF44336).withAlpha(60)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.camera_alt, color: Color(0xFFF44336), size: 22),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                "Try retaking the photo with better lighting and a closer view of the leaf for a more accurate result.",
+                                style: GoogleFonts.poppins(
+                                  color: Colors.red[300],
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 24),
 
                     // --- About Section ---
                     if (diseaseData != null) ...[
@@ -366,13 +454,13 @@ class _ResultScreenState extends State<ResultScreen> {
                         diseaseData['about'] as String,
                         style: GoogleFonts.poppins(color: Colors.grey[400], height: 1.5),
                       ),
-                      
+
                       const SizedBox(height: 20),
                       _buildSectionTitle(
                         _label == 'Healthy' ? "Care Tips" : "Treatment"
                       ),
                       const SizedBox(height: 10),
-                      ...(diseaseData['tips'] as List).map((tip) => 
+                      ...(diseaseData['tips'] as List).map((tip) =>
                         _buildTip(tip['icon'] as IconData, tip['text'] as String)
                       ),
                     ],
