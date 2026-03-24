@@ -49,6 +49,10 @@
 	<string>This app requires photo library access to select tomato leaf images for analysis.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app requires microphone access for video capture.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app uses your location to show local weather conditions and city-specific plant information.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>This app uses your location to show local weather conditions and city-specific plant information.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 </dict>

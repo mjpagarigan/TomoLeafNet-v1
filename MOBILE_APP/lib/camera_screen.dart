@@ -1,10 +1,8 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'result_screen.dart';
-import 'dart:io';
 import 'main.dart'; // To access global 'cameras' list
 
 class CameraScreen extends StatefulWidget {
@@ -17,6 +15,7 @@ class CameraScreen extends StatefulWidget {
 class _CameraScreenState extends State<CameraScreen> {
   CameraController? _controller;
   bool _isCameraInitialized = false;
+  FlashMode _flashMode = FlashMode.off;
 
   @override
   void initState() {
@@ -42,8 +41,10 @@ class _CameraScreenState extends State<CameraScreen> {
 
     try {
       await _controller!.initialize();
+      await _controller!.setFlashMode(FlashMode.off);
       if (mounted) {
         setState(() {
+          _flashMode = FlashMode.off;
           _isCameraInitialized = true;
         });
       }
@@ -58,20 +59,62 @@ class _CameraScreenState extends State<CameraScreen> {
     super.dispose();
   }
 
-  Future<void> _takePicture() async {
-    if (!_controller!.value.isInitialized) return;
+  void _toggleFlash() async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+
+    FlashMode next;
+    switch (_flashMode) {
+      case FlashMode.off:
+        next = FlashMode.torch;
+        break;
+      case FlashMode.torch:
+        next = FlashMode.auto;
+        break;
+      case FlashMode.auto:
+        next = FlashMode.off;
+        break;
+      default:
+        next = FlashMode.off;
+    }
 
     try {
+      await _controller!.setFlashMode(next);
+      if (mounted) {
+        setState(() => _flashMode = next);
+      }
+    } catch (e) {
+      print("Flash mode error: $e");
+    }
+  }
+
+  IconData _getFlashIcon() {
+    switch (_flashMode) {
+      case FlashMode.off:
+        return Icons.flash_off;
+      case FlashMode.torch:
+        return Icons.flash_on;
+      case FlashMode.auto:
+        return Icons.flash_auto;
+      default:
+        return Icons.flash_off;
+    }
+  }
+
+  Future<void> _takePicture() async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+
+    try {
+      // Ensure flash mode is explicitly set before capture to prevent auto-flash loop
+      await _controller!.setFlashMode(_flashMode);
       final image = await _controller!.takePicture();
       if (mounted) {
-         Navigator.push(
+        Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => ResultScreen(imagePath: image.path),
           ),
         );
       }
-      
     } catch (e) {
       print("Error taking picture: $e");
     }
@@ -210,8 +253,8 @@ class _CameraScreenState extends State<CameraScreen> {
 
                        // Flash/Torch Button
                       IconButton(
-                        icon: const Icon(Icons.flash_off, color: Colors.white),
-                         onPressed: () {},
+                        icon: Icon(_getFlashIcon(), color: Colors.white),
+                        onPressed: _toggleFlash,
                       ),
                     ],
                   ),
