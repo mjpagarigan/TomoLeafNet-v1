@@ -20,7 +20,9 @@
       "Bash(flutter --version)",
       "Read(//c/flutter/bin/**)",
       "Bash(\"C:/flutter/bin/flutter.bat\" --version)",
-      "Bash(\"C:/flutter/bin/flutter.bat\" config:*)"
+      "Bash(\"C:/flutter/bin/flutter.bat\" config:*)",
+      "Bash(git -C /c/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1 log --oneline)",
+      "Bash(git -C /c/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1 remote -v)"
     ]
   }
 }

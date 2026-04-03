@@ -138,9 +138,12 @@ class _ChatScreenState extends State<ChatScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
       appBar: AppBar(
-        title: Text('Plant AI Chat', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        title: Text('Plant AI Chat', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
         centerTitle: true,
+        backgroundColor: Colors.transparent, // Ensures it matches new custom background
+        elevation: 0,
         actions: [
           if (_messages.isNotEmpty)
             IconButton(
@@ -161,11 +164,11 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.smart_toy_outlined, size: 80, color: Colors.green.withAlpha(150)),
+            Icon(Icons.smart_toy_outlined, size: 80, color: Color(0xFF309249).withAlpha(150)),
             const SizedBox(height: 24),
             Text(
               'AI Chat Assistant',
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.spaceGrotesk(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
                 color: theme.colorScheme.onSurface,
@@ -175,7 +178,7 @@ class _ChatScreenState extends State<ChatScreen> {
             Text(
               'The Gemini API key is not configured. Please add your API key in lib/core/config/api_keys.dart and rebuild the app.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.spaceGrotesk(
                 fontSize: 14,
                 color: theme.colorScheme.onSurface.withAlpha(150),
                 height: 1.5,
@@ -188,6 +191,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildChat(ThemeData theme, bool isDark) {
+    // Exact color palette standard from the Home Screen UI
+    final cardColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF);
+    final badgeBgColor = isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5); // Very soft green
+    final shadowOpacity = isDark ? 0.55 : 0.18;
+
     return Column(
       children: [
         // Suggested questions (show only when no messages)
@@ -199,7 +207,7 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 Text(
                   'Suggested questions:',
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.spaceGrotesk(
                     fontSize: 12,
                     color: theme.colorScheme.onSurface.withAlpha(120),
                   ),
@@ -214,16 +222,15 @@ class _ChatScreenState extends State<ChatScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: Colors.green.withAlpha(isDark ? 30 : 20),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.green.withAlpha(80)),
+                          color: badgeBgColor,
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
                           q,
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.spaceGrotesk(
                             fontSize: 12,
-                            color: Colors.green,
-                            fontWeight: FontWeight.w500,
+                            color: isDark ? Colors.white70 : const Color(0xFF206020),
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -241,12 +248,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.eco, size: 60, color: Colors.green.withAlpha(80)),
+                      Icon(Icons.eco, size: 60, color: Color(0xFF309249).withAlpha(80)),
                       const SizedBox(height: 16),
                       Text(
                         'Ask me anything about\ntomato plant health!',
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.poppins(
+                        style: GoogleFonts.spaceGrotesk(
                           fontSize: 16,
                           color: theme.colorScheme.onSurface.withAlpha(100),
                         ),
@@ -270,55 +277,74 @@ class _ChatScreenState extends State<ChatScreen> {
         // Input field
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withAlpha(isDark ? 60 : 20),
-                blurRadius: 10,
-                offset: const Offset(0, -2),
-              ),
-            ],
-          ),
+          // We remove the solid block background so the layout flows underneath
+          color: Colors.transparent, 
           child: SafeArea(
             top: false,
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    style: GoogleFonts.poppins(fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Type your question...',
-                      hintStyle: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: theme.colorScheme.onSurface.withAlpha(100),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(30),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(shadowOpacity),
+                              blurRadius: 28,
+                              offset: const Offset(0, 14),
+                            ),
+                          ],
+                        ),
+                        child: TextField(
+                          controller: _textController,
+                          style: GoogleFonts.spaceGrotesk(fontSize: 14),
+                          decoration: InputDecoration(
+                            hintText: 'Type your question...',
+                            hintStyle: GoogleFonts.spaceGrotesk(
+                              fontSize: 14,
+                              color: theme.colorScheme.onSurface.withAlpha(100),
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(30), // Floating pill shape
+                              borderSide: BorderSide.none,
+                            ),
+                            filled: true,
+                            fillColor: cardColor, // Exact solid color matching Home cards preventing washout
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                          ),
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: _sendMessage,
+                        ),
                       ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
+                    ),
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: () => _sendMessage(_textController.text),
+                      child: Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF309249),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF309249).withOpacity(0.4),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            )
+                          ]
+                        ),
+                        child: const Icon(Icons.send, color: Colors.white, size: 22),
                       ),
-                      filled: true,
-                      fillColor: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF0F0F0),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     ),
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: _sendMessage,
-                  ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () => _sendMessage(_textController.text),
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: const BoxDecoration(
-                      color: Colors.green,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.send, color: Colors.white, size: 22),
-                  ),
-                ),
+                // Since the camera button is hidden on the Chat tab, we just need a tiny ambient hover gap
+                // over the navigation bar when the keyboard is dismissed, instead of 80px clearance.
+                if (MediaQuery.of(context).viewInsets.bottom == 0) 
+                   const SizedBox(height: 12),
               ],
             ),
           ),
@@ -338,8 +364,8 @@ class _ChatScreenState extends State<ChatScreen> {
           if (!isUser) ...[
             CircleAvatar(
               radius: 16,
-              backgroundColor: Colors.green.withAlpha(40),
-              child: const Icon(Icons.eco, size: 18, color: Colors.green),
+              backgroundColor: Color(0xFF309249).withAlpha(40),
+              child: const Icon(Icons.eco, size: 18, color: Color(0xFF309249)),
             ),
             const SizedBox(width: 8),
           ],
@@ -351,18 +377,18 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: isUser
-                        ? Colors.green
+                        ? Color(0xFF309249)
                         : (isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF0F0F0)),
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(18),
-                      topRight: const Radius.circular(18),
+                      topLeft: const Radius.circular(8),
+                      topRight: const Radius.circular(8),
                       bottomLeft: Radius.circular(isUser ? 18 : 4),
                       bottomRight: Radius.circular(isUser ? 4 : 18),
                     ),
                   ),
                   child: Text(
                     message.text,
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.spaceGrotesk(
                       fontSize: 14,
                       color: isUser
                           ? Colors.white
@@ -374,7 +400,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 const SizedBox(height: 4),
                 Text(
                   _formatTime(message.timestamp),
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.spaceGrotesk(
                     fontSize: 10,
                     color: theme.colorScheme.onSurface.withAlpha(80),
                   ),
@@ -395,8 +421,8 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           CircleAvatar(
             radius: 16,
-            backgroundColor: Colors.green.withAlpha(40),
-            child: const Icon(Icons.eco, size: 18, color: Colors.green),
+            backgroundColor: Color(0xFF309249).withAlpha(40),
+            child: const Icon(Icons.eco, size: 18, color: Color(0xFF309249)),
           ),
           const SizedBox(width: 8),
           Container(
@@ -404,9 +430,9 @@ class _ChatScreenState extends State<ChatScreen> {
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF0F0F0),
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(18),
-                topRight: Radius.circular(18),
-                bottomRight: Radius.circular(18),
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
+                bottomRight: Radius.circular(8),
                 bottomLeft: Radius.circular(4),
               ),
             ),
@@ -468,7 +494,7 @@ class _TypingDotsState extends State<_TypingDots> with TickerProviderStateMixin 
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: Colors.green.withAlpha((150 + (t * 105)).toInt().clamp(0, 255)),
+                    color: Color(0xFF309249).withAlpha((150 + (t * 105)).toInt().clamp(0, 255)),
                     shape: BoxShape.circle,
                   ),
                 ),

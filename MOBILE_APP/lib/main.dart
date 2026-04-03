@@ -7,6 +7,7 @@ import 'home_screen.dart';
 import 'chat_screen.dart';
 import 'camera_screen.dart';
 import 'more_screen.dart';
+import 'history_screen.dart';
 
 List<CameraDescription> cameras = [];
 
@@ -56,7 +57,7 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _screens = [
     const HomeScreen(),
     const ChatScreen(),
-    const Center(child: Text("My Plants")), // Placeholder for My Plants
+    const HistoryScreen(),
     const MoreScreen(),
   ];
 
@@ -64,12 +65,25 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final navBgColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    const fabColor = Color(0xFF309249); // Darker rich green for FAB like the image
 
     return Scaffold(
+      extendBody: true, // Ensures Scaffold background flows under the transparent notch and rounded corners
       body: _screens[_currentIndex],
-      floatingActionButton: SizedBox(
+      floatingActionButton: _currentIndex == 1 ? null : Container(
         height: 70,
         width: 70,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: fabColor.withOpacity(isDark ? 0.4 : 0.6),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            )
+          ],
+        ),
         child: FloatingActionButton(
           onPressed: () {
             Navigator.push(
@@ -77,28 +91,36 @@ class _MainScreenState extends State<MainScreen> {
               MaterialPageRoute(builder: (context) => const CameraScreen()),
             );
           },
-          backgroundColor: const Color(0xFF2E7D32),
+          backgroundColor: fabColor,
           shape: const CircleBorder(),
-          elevation: 4.0,
+          elevation: 0, // Shadow strictly handled by parent container's BoxShadow to avoid black artifact
           child: const Icon(Icons.camera_alt, size: 32, color: Colors.white),
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: BottomAppBar(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 8.0,
-        elevation: 8,
+        color: navBgColor,
+        shape: const AutomaticNotchedShape(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          CircleBorder(),
+        ),
+        notchMargin: 10.0, // Clean, tight wrap around the FAB
+        elevation: 10,
         child: SizedBox(
-          height: 60,
+          height: 65,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildNavItem(Icons.home, "Home", 0, theme),
-              _buildNavItem(Icons.chat_bubble_outline, "Chat", 1, theme),
-              const SizedBox(width: 40), // Space for FAB
-              _buildNavItem(Icons.eco_outlined, "My Plants", 2, theme),
-              _buildNavItem(Icons.grid_view, "More", 3, theme),
+              _buildNavItem(Icons.home, Icons.home_outlined, "Home", 0, theme),
+              _buildNavItem(Icons.chat_bubble, Icons.chat_bubble_outline, "Chat", 1, theme),
+              
+              // Empty space for the notch without text, hidden on Chat tab
+              if (_currentIndex != 1) const SizedBox(width: 48),
+              
+              _buildNavItem(Icons.eco, Icons.eco_outlined, "My Plants", 2, theme),
+              _buildNavItem(Icons.more_horiz, Icons.more_horiz, "More", 3, theme),
             ],
           ),
         ),
@@ -106,25 +128,37 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildNavItem(IconData icon, String label, int index, ThemeData theme) {
+  Widget _buildNavItem(IconData activeIcon, IconData inactiveIcon, String label, int index, ThemeData theme) {
     bool isSelected = _currentIndex == index;
+    const activeColor = Color(0xFF309249);
+    final inactiveColor = theme.colorScheme.onSurface.withOpacity(0.5);
+
     return InkWell(
       onTap: () => setState(() => _currentIndex = index),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            color: isSelected ? Colors.green : theme.colorScheme.onSurface.withAlpha(120),
-          ),
-          Text(
-            label,
-            style: GoogleFonts.poppins(
-              color: isSelected ? Colors.green : theme.colorScheme.onSurface.withAlpha(120),
-              fontSize: 10,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      child: SizedBox(
+        width: 60,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isSelected ? activeIcon : inactiveIcon,
+              color: isSelected ? activeColor : inactiveColor,
+              size: 26,
             ),
-          ),
-        ],
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: GoogleFonts.spaceGrotesk(
+                color: isSelected ? activeColor : inactiveColor,
+                fontSize: 10,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

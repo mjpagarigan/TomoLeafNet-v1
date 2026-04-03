@@ -138,7 +138,7 @@ class _CameraScreenState extends State<CameraScreen> {
     if (!_isCameraInitialized) {
       return const Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: Colors.green)),
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF13EC13))),
       );
     }
 
@@ -186,7 +186,7 @@ class _CameraScreenState extends State<CameraScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
                   decoration: BoxDecoration(
                     color: Colors.black54,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
@@ -194,15 +194,15 @@ class _CameraScreenState extends State<CameraScreen> {
                          width: 40, height: 40,
                          decoration: BoxDecoration(
                            borderRadius: BorderRadius.circular(8),
-                           color: Colors.green.withAlpha(50),
+                           color: Color(0xFF13EC13).withAlpha(50),
                          ),
-                         child: const Icon(Icons.eco, color: Colors.green),
+                         child: const Icon(Icons.eco, color: Color(0xFF13EC13)),
                        ),
                        const SizedBox(width: 15),
                        Expanded(
                          child: Text(
                            "Ensure the plant is in focus and well lighted",
-                           style: GoogleFonts.poppins(color: Colors.white, fontSize: 13),
+                           style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 13),
                          ),
                        )
                     ],
@@ -223,7 +223,7 @@ class _CameraScreenState extends State<CameraScreen> {
                         child: Container(
                           decoration: BoxDecoration(
                             color: Colors.white24,
-                            borderRadius: BorderRadius.circular(12)
+                            borderRadius: BorderRadius.circular(8)
                           ),
                           padding: const EdgeInsets.all(12),
                           child: const Icon(Icons.image, color: Colors.white),

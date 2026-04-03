@@ -50,18 +50,18 @@ class ThemeProvider extends ChangeNotifier {
       brightness: Brightness.light,
       scaffoldBackgroundColor: const Color(0xFFF5F5F5),
       colorScheme: const ColorScheme.light(
-        primary: Colors.green,
+        primary: Color(0xFF13EC13),
         secondary: Colors.tealAccent,
         surface: Colors.white,
         onSurface: Color(0xFF1E1E1E),
       ),
-      textTheme: GoogleFonts.poppinsTextTheme(ThemeData.light().textTheme),
+      textTheme: GoogleFonts.spaceGroteskTextTheme(ThemeData.light().textTheme),
       useMaterial3: true,
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Color(0xFF1E1E1E)),
-        titleTextStyle: GoogleFonts.poppins(
+        titleTextStyle: GoogleFonts.spaceGrotesk(
           color: const Color(0xFF1E1E1E),
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -70,7 +70,7 @@ class ThemeProvider extends ChangeNotifier {
       cardTheme: CardThemeData(
         color: Colors.white,
         elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -81,18 +81,18 @@ class ThemeProvider extends ChangeNotifier {
       brightness: Brightness.dark,
       scaffoldBackgroundColor: const Color(0xFF121212),
       colorScheme: const ColorScheme.dark(
-        primary: Colors.green,
+        primary: Color(0xFF13EC13),
         secondary: Colors.tealAccent,
         surface: Color(0xFF1E1E1E),
         onSurface: Colors.white,
       ),
-      textTheme: GoogleFonts.poppinsTextTheme(ThemeData.dark().textTheme),
+      textTheme: GoogleFonts.spaceGroteskTextTheme(ThemeData.dark().textTheme),
       useMaterial3: true,
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: GoogleFonts.poppins(
+        titleTextStyle: GoogleFonts.spaceGrotesk(
           color: Colors.white,
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -101,7 +101,7 @@ class ThemeProvider extends ChangeNotifier {
       cardTheme: CardThemeData(
         color: const Color(0xFF1E1E1E),
         elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }

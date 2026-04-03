@@ -14,7 +14,7 @@ class MoreScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('More', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        title: Text('More', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
         centerTitle: true,
       ),
       body: ListView(
@@ -57,7 +57,7 @@ class MoreScreen extends StatelessWidget {
   Widget _buildSectionHeader(String title, ThemeData theme) {
     return Text(
       title,
-      style: GoogleFonts.poppins(
+      style: GoogleFonts.spaceGrotesk(
         fontSize: 14,
         fontWeight: FontWeight.w600,
         color: theme.colorScheme.onSurface.withAlpha(140),
@@ -74,7 +74,7 @@ class MoreScreen extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withAlpha(isDark ? 40 : 15),
@@ -95,7 +95,7 @@ class MoreScreen extends StatelessWidget {
         children: [
           Icon(
             isDark ? Icons.dark_mode : Icons.light_mode,
-            color: Colors.green,
+            color: Color(0xFF13EC13),
             size: 24,
           ),
           const SizedBox(width: 14),
@@ -105,7 +105,7 @@ class MoreScreen extends StatelessWidget {
               children: [
                 Text(
                   'Theme',
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.spaceGrotesk(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
                     color: theme.colorScheme.onSurface,
@@ -115,7 +115,7 @@ class MoreScreen extends StatelessWidget {
                   mode == ThemeMode.system
                       ? 'System default'
                       : (mode == ThemeMode.dark ? 'Dark mode' : 'Light mode'),
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.spaceGrotesk(
                     fontSize: 12,
                     color: theme.colorScheme.onSurface.withAlpha(120),
                   ),
@@ -151,14 +151,14 @@ class MoreScreen extends StatelessWidget {
         children: [
           Text(
             label,
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.spaceGrotesk(
               fontSize: 14,
               color: theme.colorScheme.onSurface.withAlpha(150),
             ),
           ),
           Text(
             value,
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.spaceGrotesk(
               fontSize: 14,
               fontWeight: FontWeight.w500,
               color: theme.colorScheme.onSurface,
