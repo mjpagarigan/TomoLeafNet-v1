@@ -5,6 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
+import 'services/firestore_service.dart';
+import 'services/storage_service.dart';
 
 class ResultScreen extends StatefulWidget {
   final String imagePath;
@@ -23,6 +28,13 @@ class _ResultScreenState extends State<ResultScreen> {
   String _label = "Analyzing...";
   double _confidence = 0.0;
   String _errorMessage = "";
+
+  // Firebase save state
+  bool _isSaving = false;
+  bool _isSaved = false;
+
+  final _firestoreService = FirestoreService();
+  final _storageService = StorageService();
 
   // Disease information database
   static const Map<String, Map<String, dynamic>> _diseaseInfo = {
@@ -131,10 +143,6 @@ class _ResultScreenState extends State<ResultScreen> {
       }
     }
 
-    print("Preprocessed buffer: length=${inputBuffer.length}, "
-        "first 6 values=[${inputBuffer[0].toStringAsFixed(1)}, ${inputBuffer[1].toStringAsFixed(1)}, ${inputBuffer[2].toStringAsFixed(1)}, "
-        "${inputBuffer[3].toStringAsFixed(1)}, ${inputBuffer[4].toStringAsFixed(1)}, ${inputBuffer[5].toStringAsFixed(1)}]");
-
     return inputBuffer;
   }
 
@@ -184,6 +192,9 @@ class _ResultScreenState extends State<ResultScreen> {
           _confidence = maxProb;
           _isLoading = false;
         });
+
+        // Auto-save scan result to Firebase
+        _saveScanToFirebase();
       }
 
     } catch (e, stackTrace) {
@@ -196,6 +207,58 @@ class _ResultScreenState extends State<ResultScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  /// Save scan result to Firestore and upload image to Cloud Storage
+  Future<void> _saveScanToFirebase() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() => _isSaving = true);
+
+    try {
+      // Try to get current GPS coordinates
+      GeoPoint? gpsCoordinates;
+      try {
+        final permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.whileInUse ||
+            permission == LocationPermission.always) {
+          final position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.low,
+            timeLimit: const Duration(seconds: 5),
+          );
+          gpsCoordinates = GeoPoint(position.latitude, position.longitude);
+        }
+      } catch (_) {
+        // Location unavailable — proceed without GPS
+      }
+
+      // Save scan document to Firestore
+      final scanId = await _firestoreService.saveScan(
+        uid: user.uid,
+        predictedDisease: _label,
+        confidenceScore: _confidence,
+        confidenceLabel: _getConfidenceLabel(_confidence),
+        gpsCoordinates: gpsCoordinates,
+      );
+
+      // Upload image to Cloud Storage
+      final imageUrl = await _storageService.uploadScanImage(
+        uid: user.uid,
+        scanId: scanId,
+        localImagePath: widget.imagePath,
+      );
+
+      // Update Firestore document with the image download URL
+      await _firestoreService.updateScanImageUrl(user.uid, scanId, imageUrl);
+
+      if (mounted) setState(() => _isSaved = true);
+    } catch (e) {
+      print('Error saving scan: $e');
+      // Non-blocking — the scan result is still shown even if save fails
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -251,6 +314,24 @@ class _ResultScreenState extends State<ResultScreen> {
         ),
         title: Text("Diagnosis Results", style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
         centerTitle: true,
+        actions: [
+          // Save status indicator
+          if (_isSaving)
+            const Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF309249)),
+                ),
+              ),
+            )
+          else if (_isSaved)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Icon(Icons.cloud_done, color: const Color(0xFF309249), size: 24),
+            ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -382,7 +463,7 @@ class _ResultScreenState extends State<ResultScreen> {
     List<String> parts = text.split('.');
     String title = parts.isNotEmpty ? parts.first + "." : text;
     String subtitle = parts.length > 1 ? parts.sublist(1).join('.').trim() : "";
-    
+
     // Fallback if no periods
     if (subtitle.isEmpty && text.contains(' to ')) {
         final split = text.split(' to ');

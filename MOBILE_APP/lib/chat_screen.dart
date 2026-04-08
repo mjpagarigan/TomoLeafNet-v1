@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
-import 'core/config/api_keys.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'services/chat_service.dart';
 
 class ChatMessage {
   final String text;
@@ -25,15 +25,10 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ChatService _chatService = ChatService();
 
   final List<ChatMessage> _messages = [];
-  ChatSession? _chatSession;
   bool _isTyping = false;
-
-  static const String _systemPrompt =
-      'You are a plant health assistant specializing in tomato leaf diseases. '
-      'Help users identify symptoms, understand diseases, and recommend treatments '
-      'based on their descriptions. Keep responses clear, practical, and farmer-friendly.';
 
   static const List<String> _suggestedQuestions = [
     "Why are my tomato leaves turning yellow?",
@@ -41,28 +36,10 @@ class _ChatScreenState extends State<ChatScreen> {
     "What does Bacterial Spot look like?",
   ];
 
-  bool get _hasValidApiKey =>
-      ApiKeys.gemini.isNotEmpty && ApiKeys.gemini != 'ADD_YOUR_GEMINI_API_KEY_HERE';
-
-  @override
-  void initState() {
-    super.initState();
-    if (_hasValidApiKey) {
-      _initChat();
-    }
-  }
-
-  void _initChat() {
-    final model = GenerativeModel(
-      model: 'gemini-2.5-flash',
-      apiKey: ApiKeys.gemini,
-      systemInstruction: Content.text(_systemPrompt),
-    );
-    _chatSession = model.startChat();
-  }
+  bool get _isAuthenticated => FirebaseAuth.instance.currentUser != null;
 
   Future<void> _sendMessage(String text) async {
-    if (text.trim().isEmpty || _chatSession == null) return;
+    if (text.trim().isEmpty || !_isAuthenticated) return;
 
     final userMessage = ChatMessage(
       text: text.trim(),
@@ -78,15 +55,22 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      final response = await _chatSession!.sendMessage(
-        Content.text(text.trim()),
-      );
+      // Build conversation history for the backend
+      final history = _messages
+          .map((m) => {
+                'role': m.isUser ? 'user' : 'assistant',
+                'text': m.text,
+              })
+          .toList();
 
-      final aiText = response.text ?? 'Sorry, I could not generate a response.';
+      final reply = await _chatService.sendMessage(
+        message: text.trim(),
+        history: history,
+      );
 
       setState(() {
         _messages.add(ChatMessage(
-          text: aiText,
+          text: reply,
           isUser: false,
           timestamp: DateTime.now(),
         ));
@@ -95,7 +79,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       setState(() {
         _messages.add(ChatMessage(
-          text: 'Error: ${e.toString().replaceAll(RegExp(r'Exception: '), '')}',
+          text: e.toString().replaceAll(RegExp(r'Exception: '), ''),
           isUser: false,
           timestamp: DateTime.now(),
         ));
@@ -122,7 +106,6 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _messages.clear();
     });
-    _initChat();
   }
 
   @override
@@ -140,9 +123,9 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
       appBar: AppBar(
-        title: Text('Plant AI Chat', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
+        title: Text('Plant AI (Gemma 4)', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
         centerTitle: true,
-        backgroundColor: Colors.transparent, // Ensures it matches new custom background
+        backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
           if (_messages.isNotEmpty)
@@ -153,18 +136,18 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
         ],
       ),
-      body: !_hasValidApiKey ? _buildNoKeyMessage(theme) : _buildChat(theme, isDark),
+      body: !_isAuthenticated ? _buildNoAuthMessage(theme) : _buildChat(theme, isDark),
     );
   }
 
-  Widget _buildNoKeyMessage(ThemeData theme) {
+  Widget _buildNoAuthMessage(ThemeData theme) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.smart_toy_outlined, size: 80, color: Color(0xFF309249).withAlpha(150)),
+            Icon(Icons.smart_toy_outlined, size: 80, color: const Color(0xFF309249).withAlpha(150)),
             const SizedBox(height: 24),
             Text(
               'AI Chat Assistant',
@@ -176,7 +159,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'The Gemini API key is not configured. Please add your API key in lib/core/config/api_keys.dart and rebuild the app.',
+              'Please sign in to use the AI chat assistant.',
               textAlign: TextAlign.center,
               style: GoogleFonts.spaceGrotesk(
                 fontSize: 14,
@@ -191,9 +174,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildChat(ThemeData theme, bool isDark) {
-    // Exact color palette standard from the Home Screen UI
     final cardColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF);
-    final badgeBgColor = isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5); // Very soft green
+    final badgeBgColor = isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5);
     final shadowOpacity = isDark ? 0.55 : 0.18;
 
     return Column(
@@ -248,7 +230,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.eco, size: 60, color: Color(0xFF309249).withAlpha(80)),
+                      Icon(Icons.eco, size: 60, color: const Color(0xFF309249).withAlpha(80)),
                       const SizedBox(height: 16),
                       Text(
                         'Ask me anything about\ntomato plant health!',
@@ -277,8 +259,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // Input field
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          // We remove the solid block background so the layout flows underneath
-          color: Colors.transparent, 
+          color: Colors.transparent,
           child: SafeArea(
             top: false,
             child: Column(
@@ -307,11 +288,11 @@ class _ChatScreenState extends State<ChatScreen> {
                               color: theme.colorScheme.onSurface.withAlpha(100),
                             ),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(30), // Floating pill shape
+                              borderRadius: BorderRadius.circular(30),
                               borderSide: BorderSide.none,
                             ),
                             filled: true,
-                            fillColor: cardColor, // Exact solid color matching Home cards preventing washout
+                            fillColor: cardColor,
                             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                           ),
                           textInputAction: TextInputAction.send,
@@ -334,16 +315,14 @@ class _ChatScreenState extends State<ChatScreen> {
                               blurRadius: 12,
                               offset: const Offset(0, 6),
                             )
-                          ]
+                          ],
                         ),
                         child: const Icon(Icons.send, color: Colors.white, size: 22),
                       ),
                     ),
                   ],
                 ),
-                // Since the camera button is hidden on the Chat tab, we just need a tiny ambient hover gap
-                // over the navigation bar when the keyboard is dismissed, instead of 80px clearance.
-                if (MediaQuery.of(context).viewInsets.bottom == 0) 
+                if (MediaQuery.of(context).viewInsets.bottom == 0)
                    const SizedBox(height: 12),
               ],
             ),
@@ -364,7 +343,7 @@ class _ChatScreenState extends State<ChatScreen> {
           if (!isUser) ...[
             CircleAvatar(
               radius: 16,
-              backgroundColor: Color(0xFF309249).withAlpha(40),
+              backgroundColor: const Color(0xFF309249).withAlpha(40),
               child: const Icon(Icons.eco, size: 18, color: Color(0xFF309249)),
             ),
             const SizedBox(width: 8),
@@ -377,7 +356,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: isUser
-                        ? Color(0xFF309249)
+                        ? const Color(0xFF309249)
                         : (isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF0F0F0)),
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(8),
@@ -390,9 +369,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     message.text,
                     style: GoogleFonts.spaceGrotesk(
                       fontSize: 14,
-                      color: isUser
-                          ? Colors.white
-                          : theme.colorScheme.onSurface,
+                      color: isUser ? Colors.white : theme.colorScheme.onSurface,
                       height: 1.4,
                     ),
                   ),
@@ -421,7 +398,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           CircleAvatar(
             radius: 16,
-            backgroundColor: Color(0xFF309249).withAlpha(40),
+            backgroundColor: const Color(0xFF309249).withAlpha(40),
             child: const Icon(Icons.eco, size: 18, color: Color(0xFF309249)),
           ),
           const SizedBox(width: 8),
@@ -494,7 +471,7 @@ class _TypingDotsState extends State<_TypingDots> with TickerProviderStateMixin 
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: Color(0xFF309249).withAlpha((150 + (t * 105)).toInt().clamp(0, 255)),
+                    color: const Color(0xFF309249).withAlpha((150 + (t * 105)).toInt().clamp(0, 255)),
                     shape: BoxShape.circle,
                   ),
                 ),

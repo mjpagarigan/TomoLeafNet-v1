@@ -46,3 +46,8 @@ app.*.map.json
 
 # Private API Keys
 lib/core/config/api_keys.dart
+
+# Firebase config files (contain project-specific keys)
+/android/app/google-services.json
+/ios/Runner/GoogleService-Info.plist
+lib/firebase_options.dart

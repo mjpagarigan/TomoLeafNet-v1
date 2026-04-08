@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:http/http.dart' as http;
-import 'core/config/api_keys.dart';
+import 'services/cloud_functions_service.dart';
 
 class WeatherData {
   final String cityName;
@@ -86,47 +84,33 @@ class WeatherService {
     return 'Unknown';
   }
 
-  /// Fetch weather data from OpenWeatherMap
+  /// Fetch weather data via Firebase Cloud Function proxy.
+  /// API keys are stored securely on the server — never in the app.
   static Future<WeatherData?> fetchWeather() async {
     try {
       final position = await _getCurrentPosition();
       if (position == null) return null;
 
       final cityName = await _getCityName(position.latitude, position.longitude);
-      const apiKey = ApiKeys.openWeather;
 
-      if (apiKey.isEmpty || apiKey == 'ADD_YOUR_OPENWEATHER_API_KEY_HERE') {
-        // Return location-only data without weather
-        return WeatherData(
+      try {
+        final functionsService = CloudFunctionsService();
+        final data = await functionsService.fetchWeather(
+          latitude: position.latitude,
+          longitude: position.longitude,
           cityName: cityName,
-          tempMin: 0,
-          tempMax: 0,
-          condition: 'unavailable',
-          iconCode: '',
         );
-      }
 
-      final url = Uri.parse(
-        'https://api.openweathermap.org/data/2.5/weather'
-        '?lat=${position.latitude}'
-        '&lon=${position.longitude}'
-        '&appid=$apiKey'
-        '&units=metric',
-      );
-
-      final response = await http.get(url).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
         return WeatherData(
-          cityName: cityName,
-          tempMin: (data['main']['temp_min'] as num).toDouble(),
-          tempMax: (data['main']['temp_max'] as num).toDouble(),
-          condition: data['weather'][0]['main'] as String,
-          iconCode: data['weather'][0]['icon'] as String,
+          cityName: data['cityName'] as String? ?? cityName,
+          tempMin: (data['tempMin'] as num?)?.toDouble() ?? 0,
+          tempMax: (data['tempMax'] as num?)?.toDouble() ?? 0,
+          condition: data['condition'] as String? ?? 'unavailable',
+          iconCode: data['iconCode'] as String? ?? '',
         );
-      } else {
-        // API error — return location-only
+      } catch (e) {
+        print('Cloud Function weather error: $e');
+        // Fallback: return location-only data if Cloud Function is not deployed yet
         return WeatherData(
           cityName: cityName,
           tempMin: 0,

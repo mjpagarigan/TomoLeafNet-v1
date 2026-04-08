@@ -2,22 +2,38 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'firebase_options.dart';
 import 'theme_provider.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
 import 'camera_screen.dart';
 import 'more_screen.dart';
 import 'history_screen.dart';
+import 'screens/auth/auth_wrapper.dart';
 
 List<CameraDescription> cameras = [];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Enable Firestore offline persistence
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+  );
+
   try {
     cameras = await availableCameras();
   } on CameraException catch (e) {
     print('Error: $e.code\nError Message: $e.message');
   }
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => ThemeProvider(),
@@ -38,7 +54,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeProvider.lightTheme,
       darkTheme: ThemeProvider.darkTheme,
       themeMode: themeProvider.themeMode,
-      home: const MainScreen(),
+      home: const AuthWrapper(),
       debugShowCheckedModeBanner: false,
     );
   }
@@ -115,10 +131,10 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               _buildNavItem(Icons.home, Icons.home_outlined, "Home", 0, theme),
               _buildNavItem(Icons.chat_bubble, Icons.chat_bubble_outline, "Chat", 1, theme),
-              
+
               // Empty space for the notch without text, hidden on Chat tab
               if (_currentIndex != 1) const SizedBox(width: 48),
-              
+
               _buildNavItem(Icons.eco, Icons.eco_outlined, "My Plants", 2, theme),
               _buildNavItem(Icons.more_horiz, Icons.more_horiz, "More", 3, theme),
             ],

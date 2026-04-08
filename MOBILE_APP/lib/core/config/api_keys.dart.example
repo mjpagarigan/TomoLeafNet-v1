@@ -1,4 +1,3 @@
 class ApiKeys {
-  static const String gemini = 'ADD_YOUR_GEMINI_API_KEY_HERE';
   static const String openWeather = 'ADD_YOUR_OPENWEATHER_API_KEY_HERE';
 }

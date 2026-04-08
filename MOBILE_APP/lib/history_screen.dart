@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:intl/intl.dart';
+import 'models/scan_model.dart';
+import 'services/firestore_service.dart';
+import 'services/storage_service.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -10,11 +16,14 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   bool _showHealthy = true;
+  final _firestoreService = FirestoreService();
+  final _storageService = StorageService();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
@@ -34,32 +43,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              // Search Bar
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[200],
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Icon(Icons.search, color: isDark ? Colors.grey[400] : Colors.grey[600]),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: "Search plants...",
-                          hintStyle: GoogleFonts.spaceGrotesk(
-                            color: isDark ? Colors.grey[400] : Colors.grey[600],
-                          ),
-                          border: InputBorder.none,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
               // Toggle Switch
               Container(
                 decoration: BoxDecoration(
@@ -69,86 +52,84 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 padding: const EdgeInsets.all(4),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _showHealthy = true),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            color: _showHealthy ? (isDark ? const Color(0xFF2C2C2C) : Colors.white) : Colors.transparent,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: _showHealthy
-                                ? [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    )
-                                  ]
-                                : [],
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            "Healthy",
-                            style: GoogleFonts.spaceGrotesk(
-                              fontWeight: FontWeight.bold,
-                              color: _showHealthy
-                                  ? (isDark ? Colors.white : Colors.black)
-                                  : (isDark ? Colors.grey[500] : Colors.grey[600]),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _showHealthy = false),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            color: !_showHealthy ? (isDark ? const Color(0xFF2C2C2C) : Colors.white) : Colors.transparent,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: !_showHealthy
-                                ? [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    )
-                                  ]
-                                : [],
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            "Infected",
-                            style: GoogleFonts.spaceGrotesk(
-                              fontWeight: FontWeight.bold,
-                              color: !_showHealthy
-                                  ? (isDark ? Colors.white : Colors.black)
-                                  : (isDark ? Colors.grey[500] : Colors.grey[600]),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    _buildToggle("Healthy", true, isDark),
+                    _buildToggle("Infected", false, isDark),
                   ],
                 ),
               ),
               const SizedBox(height: 24),
-              // History List
+              // History List — real-time from Firestore
               Expanded(
-                child: ListView.builder(
-                  itemCount: _showHealthy ? 1 : 2,
-                  itemBuilder: (context, index) {
-                    return _buildHistoryCard(
-                      isDark: isDark,
-                      isHealthy: _showHealthy,
-                      diagnosisName: _showHealthy ? "Healthy Plant" : "Early Blight",
-                      date: "Oct 15, 2024",
-                      progress: _showHealthy ? 1.0 : 0.4,
-                    );
-                  },
-                ),
+                child: user == null
+                    ? Center(
+                        child: Text(
+                          'Sign in to view your scan history.',
+                          style: GoogleFonts.spaceGrotesk(color: Colors.grey),
+                        ),
+                      )
+                    : StreamBuilder<List<ScanModel>>(
+                        stream: _firestoreService.getUserScansStream(user.uid),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(color: Color(0xFF309249)),
+                            );
+                          }
+
+                          final allScans = snapshot.data ?? [];
+                          final filteredScans = allScans.where((scan) {
+                            if (_showHealthy) {
+                              return scan.predictedDisease == 'Healthy';
+                            } else {
+                              return scan.predictedDisease != 'Healthy';
+                            }
+                          }).toList();
+
+                          if (filteredScans.isEmpty) {
+                            return Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    _showHealthy ? Icons.eco : Icons.search_off,
+                                    size: 60,
+                                    color: const Color(0xFF309249).withAlpha(80),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _showHealthy
+                                        ? 'No healthy scans yet'
+                                        : 'No infected scans yet',
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontSize: 16,
+                                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Scan a leaf to start tracking!',
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontSize: 13,
+                                      color: isDark ? Colors.grey[500] : Colors.grey[500],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          return ListView.builder(
+                            itemCount: filteredScans.length,
+                            itemBuilder: (context, index) {
+                              return _buildScanCard(
+                                scan: filteredScans[index],
+                                isDark: isDark,
+                                userId: user.uid,
+                              );
+                            },
+                          );
+                        },
+                      ),
               ),
             ],
           ),
@@ -157,118 +138,217 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  Widget _buildHistoryCard({
-    required bool isDark,
-    required bool isHealthy,
-    required String diagnosisName,
-    required String date,
-    required double progress,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+  Widget _buildToggle(String label, bool isHealthyToggle, bool isDark) {
+    final isActive = _showHealthy == isHealthyToggle;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _showHealthy = isHealthyToggle),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isActive
+                ? (isDark ? const Color(0xFF2C2C2C) : Colors.white)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    )
+                  ]
+                : [],
           ),
-        ],
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: GoogleFonts.spaceGrotesk(
+              fontWeight: FontWeight.bold,
+              color: isActive
+                  ? (isDark ? Colors.white : Colors.black)
+                  : (isDark ? Colors.grey[500] : Colors.grey[600]),
+            ),
+          ),
+        ),
       ),
-      child: Row(
-        children: [
-          // Thumbnail
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
+    );
+  }
+
+  Widget _buildScanCard({
+    required ScanModel scan,
+    required bool isDark,
+    required String userId,
+  }) {
+    final isHealthy = scan.predictedDisease == 'Healthy';
+    final displayName = _getDisplayName(scan.predictedDisease);
+    final dateStr = DateFormat('MMM d, yyyy  h:mm a').format(scan.timestamp);
+
+    return Dismissible(
+      key: Key(scan.scanId),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.redAccent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      confirmDismiss: (direction) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text('Delete Scan', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
+            content: Text('Remove this scan from your history?', style: GoogleFonts.spaceGrotesk()),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text('Cancel', style: GoogleFonts.spaceGrotesk()),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text('Delete', style: GoogleFonts.spaceGrotesk(color: Colors.redAccent)),
+              ),
+            ],
+          ),
+        );
+      },
+      onDismissed: (_) async {
+        await _storageService.deleteScanImage(uid: userId, scanId: scan.scanId);
+        await _firestoreService.deleteScan(userId, scan.scanId);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Thumbnail from Cloud Storage
+            ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              image: const DecorationImage(
-                image: AssetImage('assets/tomato.jpg'), // Fallback generic image
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          // Center Details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      diagnosisName,
-                      style: GoogleFonts.spaceGrotesk(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+              child: SizedBox(
+                width: 60,
+                height: 60,
+                child: scan.imageUrl != null && scan.imageUrl!.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: scan.imageUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(
+                          color: isDark ? Colors.grey[800] : Colors.grey[200],
+                          child: const Center(
+                            child: SizedBox(
+                              width: 20, height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF309249)),
+                            ),
+                          ),
+                        ),
+                        errorWidget: (_, __, ___) => Container(
+                          color: isDark ? Colors.grey[800] : Colors.grey[200],
+                          child: Icon(Icons.eco, color: Colors.grey[400]),
+                        ),
+                      )
+                    : Container(
+                        color: isDark ? Colors.grey[800] : Colors.grey[200],
+                        child: Icon(Icons.eco, color: Colors.grey[400]),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(
-                      isHealthy ? Icons.check_circle : Icons.warning_rounded,
-                      color: isHealthy ? const Color(0xFF13EC13) : Colors.redAccent,
-                      size: 16,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  date,
-                  style: GoogleFonts.spaceGrotesk(
-                    color: Colors.grey[500],
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Progress Indicator
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                "Treatment Plan",
-                style: GoogleFonts.spaceGrotesk(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 11,
-                  color: isDark ? Colors.grey[400] : Colors.grey[700],
-                ),
               ),
-              const SizedBox(height: 6),
-              Row(
+            ),
+            const SizedBox(width: 16),
+            // Details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 50,
-                    child: LinearProgressIndicator(
-                      value: progress,
-                      backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
-                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF13EC13)),
-                      minHeight: 6,
-                      borderRadius: BorderRadius.circular(3),
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          displayName,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        isHealthy ? Icons.check_circle : Icons.warning_rounded,
+                        color: isHealthy ? const Color(0xFF309249) : Colors.redAccent,
+                        size: 16,
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(height: 4),
                   Text(
-                    progress >= 1.0 ? "Done" : "${(progress * 100).toInt()}%",
+                    dateStr,
                     style: GoogleFonts.spaceGrotesk(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF13EC13),
+                      color: Colors.grey[500],
+                      fontSize: 12,
                     ),
                   ),
                 ],
               ),
-            ],
-          ),
-        ],
+            ),
+            // Confidence badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: _getConfidenceBadgeColor(scan.confidenceScore, isDark),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                scan.confidenceLabel.isNotEmpty
+                    ? scan.confidenceLabel
+                    : '${(scan.confidenceScore * 100).toInt()}%',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: _getConfidenceTextColor(scan.confidenceScore),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  String _getDisplayName(String label) {
+    const names = {
+      'Bacterial_Spot': 'Bacterial Spot',
+      'Early_Blight': 'Early Blight',
+      'Healthy': 'Healthy Leaf',
+      'Late_Blight': 'Late Blight',
+      'Septoria': 'Septoria Leaf Spot',
+    };
+    return names[label] ?? label.replaceAll('_', ' ');
+  }
+
+  Color _getConfidenceBadgeColor(double confidence, bool isDark) {
+    if (confidence >= 0.80) return isDark ? const Color(0xFF1B3A1B) : const Color(0xFFE8F3E5);
+    if (confidence >= 0.60) return isDark ? const Color(0xFF3A3020) : const Color(0xFFFFF3E0);
+    return isDark ? const Color(0xFF3A2020) : const Color(0xFFFFEBEE);
+  }
+
+  Color _getConfidenceTextColor(double confidence) {
+    if (confidence >= 0.80) return const Color(0xFF309249);
+    if (confidence >= 0.60) return const Color(0xFFFF9800);
+    return const Color(0xFFF44336);
   }
 }

@@ -53,12 +53,30 @@ flutter analyze                # Dart static analysis
 
 ### Flutter App (MOBILE_APP/lib/)
 
-- **main.dart** — Entry point with tab navigation (HomeScreen, ChatScreen, MyPlantsScreen, MoreScreen) and a center-docked FAB for camera.
-- **camera_screen.dart** → **result_screen.dart** — Capture/select image → preprocess (center crop, resize 224×224) → TFLite inference → display prediction with disease info and management tips.
-- **chat_screen.dart** — Gemini AI chatbot for follow-up questions about diseases.
+- **main.dart** — Entry point with Firebase init, AuthWrapper routing, tab navigation (HomeScreen, ChatScreen, MyPlantsScreen, MoreScreen) and a center-docked FAB for camera.
+- **core/config/app_config.dart** — Configuration constants including the Plant AI backend URL (local network IP for Ollama/FastAPI bridge).
+- **screens/auth/** — Login, Register, Forgot Password screens + AuthWrapper (Firebase Auth state listener).
+- **camera_screen.dart** → **result_screen.dart** — Capture/select image → preprocess (center crop, resize 224×224) → TFLite inference → auto-save scan to Firestore + Cloud Storage → display prediction with disease info and management tips.
+- **history_screen.dart** — Real-time scan history from Firestore with swipe-to-delete and cached image thumbnails.
+- **chat_screen.dart** — Gemma 4 AI chatbot via local Ollama backend (FastAPI bridge server on dev machine, no cloud dependency). UI title: "Plant AI (Gemma 4)".
 - **theme_provider.dart** — Dark/light mode via Provider pattern.
-- **weather_service.dart** — Location + weather API integration.
-- **core/config/api_keys.dart** — API key storage (Gemini, weather).
+- **weather_service.dart** — Location + weather via Cloud Functions proxy (no API key in app binary).
+- **services/chat_service.dart** — HTTP client for Plant AI chat, sends messages to local FastAPI backend which forwards to Ollama (Gemma 4).
+- **services/** — `AuthService`, `FirestoreService`, `StorageService`, `CloudFunctionsService` (weather only), `ChatService` (local Ollama).
+- **models/** — `UserModel`, `ScanModel` — Firestore data models with serialization.
+
+### Local AI Backend (backend/)
+
+- **main.py** — FastAPI server bridging Flutter ↔ Ollama. Exposes `/chat` (POST) and `/health` (GET) endpoints. Forwards messages to Gemma 4 via Ollama REST API at `http://localhost:11434`.
+- **requirements.txt** — Python dependencies: `fastapi`, `uvicorn`, `httpx`, `python-dotenv`.
+- **.env** — Configuration for `OLLAMA_HOST` and `OLLAMA_MODEL` (default: `gemma4:e2b`).
+
+### Firebase Backend (firebase/)
+
+- **functions/index.js** — Cloud Function: `weatherProxy` (OpenWeatherMap API). Enforces Firebase Auth and uses server-side secrets.
+- **firestore.rules** — Users can only read/write their own `users/{uid}/**` documents.
+- **storage.rules** — Users can only read/write their own `scan_images/{uid}/**` files.
+- **firebase.json** — Firebase project configuration.
 
 ### UI Design System
 
@@ -82,6 +100,12 @@ The mobile application utilizes a highly customized, premium high-fidelity desig
 - The TFLite model is quantized for mobile deployment and bundled in `MOBILE_APP/assets/`.
 - Flutter app uses `tflite_flutter` 0.12.0 for on-device inference.
 - Codemagic CI is configured via `codemagic.yaml` for mobile builds.
+- **Firebase backend** provides auth, Firestore database, Cloud Storage, and Cloud Functions (weather only). See `SETUP.md` for configuration.
+- **Plant AI Chat** uses Gemma 4 (`gemma4:e2b`) running locally via Ollama on the development machine, bridged by a FastAPI server. No cloud API keys needed for chat.
+- **Chat backend URL config** in `app_config.dart` uses a `_host` constant: set to `10.0.2.2` for Android emulator or the dev machine's local IP (e.g., `192.168.86.35`) for physical devices.
+- **No weather API keys in app binary** — OpenWeatherMap key is stored as a Firebase secret and accessed only through the `weatherProxy` Cloud Function.
+- **Offline persistence** is enabled for Firestore — scan history works without connectivity.
+- Firebase config files (`google-services.json`, `GoogleService-Info.plist`, `firebase_options.dart`) are gitignored. New developers must run `flutterfire configure`.
 
 ## Known Issues
 

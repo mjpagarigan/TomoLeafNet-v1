@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'theme_provider.dart';
+import 'services/auth_service.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -11,6 +13,7 @@ class MoreScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
       appBar: AppBar(
@@ -20,6 +23,68 @@ class MoreScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          // --- User Profile Section ---
+          if (user != null) ...[
+            _buildSectionHeader('Profile', theme),
+            const SizedBox(height: 12),
+            _buildSettingsCard(
+              theme: theme,
+              isDark: isDark,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  child: Row(
+                    children: [
+                      // Profile avatar
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: const Color(0xFF309249).withAlpha(40),
+                        backgroundImage: user.photoURL != null
+                            ? NetworkImage(user.photoURL!)
+                            : null,
+                        child: user.photoURL == null
+                            ? Text(
+                                (user.displayName ?? user.email ?? '?')[0].toUpperCase(),
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF309249),
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              user.displayName ?? 'User',
+                              style: GoogleFonts.spaceGrotesk(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              user.email ?? '',
+                              style: GoogleFonts.spaceGrotesk(
+                                fontSize: 13,
+                                color: theme.colorScheme.onSurface.withAlpha(120),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 28),
+          ],
+
           // --- Appearance Section ---
           _buildSectionHeader('Appearance', theme),
           const SizedBox(height: 12),
@@ -49,9 +114,67 @@ class MoreScreen extends StatelessWidget {
               _buildInfoRow(theme, 'Classes', '5 tomato leaf conditions'),
             ],
           ),
+
+          // --- Sign Out ---
+          if (user != null) ...[
+            const SizedBox(height: 28),
+            _buildSectionHeader('Account', theme),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: () => _signOut(context),
+                icon: const Icon(Icons.logout, size: 20),
+                label: Text(
+                  'Sign Out',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ),
+          ],
+
+          // Extra padding for bottom nav bar
+          const SizedBox(height: 100),
         ],
       ),
     );
+  }
+
+  Future<void> _signOut(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Sign Out', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
+        content: Text('Are you sure you want to sign out?', style: GoogleFonts.spaceGrotesk()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.spaceGrotesk()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Sign Out', style: GoogleFonts.spaceGrotesk(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await AuthService().signOut();
+      // AuthWrapper will automatically redirect to LoginScreen
+    }
   }
 
   Widget _buildSectionHeader(String title, ThemeData theme) {
@@ -95,7 +218,7 @@ class MoreScreen extends StatelessWidget {
         children: [
           Icon(
             isDark ? Icons.dark_mode : Icons.light_mode,
-            color: Color(0xFF13EC13),
+            color: const Color(0xFF13EC13),
             size: 24,
           ),
           const SizedBox(width: 14),
