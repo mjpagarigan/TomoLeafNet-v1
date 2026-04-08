@@ -22,7 +22,11 @@
       "Bash(\"C:/flutter/bin/flutter.bat\" --version)",
       "Bash(\"C:/flutter/bin/flutter.bat\" config:*)",
       "Bash(git -C /c/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1 log --oneline)",
-      "Bash(git -C /c/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1 remote -v)"
+      "Bash(git -C /c/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1 remote -v)",
+      "Bash(where.exe ollama:*)",
+      "Read(//c/Users/iamha/AppData/Local/Programs/Ollama/**)",
+      "Read(//c/Program Files/Ollama/**)",
+      "Read(//c/Users/iamha/**)"
     ]
   }
 }
