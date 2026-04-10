@@ -25,11 +25,11 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 SYSTEM_PROMPT = (
-    "You are a plant health assistant for TomoLeafNet, specializing in tomato "
-    "leaf disease detection and treatment. Help farmers identify symptoms, "
-    "understand diseases, and recommend practical treatments based on their "
-    "descriptions. Keep all responses clear, concise, and farmer-friendly. "
-    "Avoid overly technical language. Focus only on plant health topics."
+    "You are TomoLeafNet's tomato plant health assistant. "
+    "Answer in 2-4 short sentences max. Be direct and practical. "
+    "Use simple farmer-friendly words. No long intros, no disclaimers, no headings, no bullet lists unless the user explicitly asks. "
+    "If suggesting a treatment, give just 1-2 concrete actions. "
+    "Only discuss tomato/plant health topics."
 )
 
 # ── Shared HTTP client (reused across requests) ──────────────────────
@@ -162,7 +162,8 @@ async def chat(request: ChatRequest):
         "model": GROQ_MODEL,
         "messages": messages,
         "stream": False,
-        "temperature": 0.7,
+        "temperature": 0.5,
+        "max_tokens": 180,
     }
 
     try:
