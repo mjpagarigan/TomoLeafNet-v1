@@ -30,7 +30,11 @@ class ChatService {
       final response = await http
           .post(
             uri,
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              // Bypass ngrok free-tier browser warning page
+              'ngrok-skip-browser-warning': 'true',
+            },
             body: body,
           )
           .timeout(const Duration(seconds: 120));

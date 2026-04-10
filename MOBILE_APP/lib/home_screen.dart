@@ -7,7 +7,9 @@ import 'weather_service.dart';
 import 'camera_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onNavigateToRecentScans;
+
+  const HomeScreen({super.key, this.onNavigateToRecentScans});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -331,14 +333,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: _buildSecondaryCard(
-                      isDark: isDark,
-                      cardColor: cardColor,
-                      iconBgColor: iconBgColor,
-                      iconColor: gradientEnd,
-                      icon: Icons.access_time_rounded,
-                      title: "Recent Scans",
-                      subtitle: "View history",
+                    child: GestureDetector(
+                      onTap: widget.onNavigateToRecentScans,
+                      child: _buildSecondaryCard(
+                        isDark: isDark,
+                        cardColor: cardColor,
+                        iconBgColor: iconBgColor,
+                        iconColor: gradientEnd,
+                        icon: Icons.access_time_rounded,
+                        title: "Recent Scans",
+                        subtitle: "View history",
+                      ),
                     ),
                   ),
                 ],

@@ -58,18 +58,20 @@ flutter analyze                # Dart static analysis
 - **screens/auth/** — Login, Register, Forgot Password screens + AuthWrapper (Firebase Auth state listener).
 - **camera_screen.dart** → **result_screen.dart** — Capture/select image → preprocess (center crop, resize 224×224) → TFLite inference → auto-save scan to Firestore + Cloud Storage → display prediction with disease info and management tips.
 - **history_screen.dart** — Real-time scan history from Firestore with swipe-to-delete and cached image thumbnails.
-- **chat_screen.dart** — Gemma 4 AI chatbot via local Ollama backend (FastAPI bridge server on dev machine, no cloud dependency). UI title: "Plant AI (Gemma 4)".
+- **chat_screen.dart** — Llama 3.1 AI chatbot via FastAPI backend → Groq Cloud. UI title: "Plant AI (Llama 3.1)".
 - **theme_provider.dart** — Dark/light mode via Provider pattern.
 - **weather_service.dart** — Location + weather via Cloud Functions proxy (no API key in app binary).
-- **services/chat_service.dart** — HTTP client for Plant AI chat, sends messages to local FastAPI backend which forwards to Ollama (Gemma 4).
-- **services/** — `AuthService`, `FirestoreService`, `StorageService`, `CloudFunctionsService` (weather only), `ChatService` (local Ollama).
+- **services/chat_service.dart** — HTTP client for Plant AI chat, sends messages to the FastAPI backend which forwards to Groq Cloud (Llama 3.1).
+- **services/** — `AuthService`, `FirestoreService`, `StorageService`, `CloudFunctionsService` (weather only), `ChatService` (Groq via FastAPI).
 - **models/** — `UserModel`, `ScanModel` — Firestore data models with serialization.
 
-### Local AI Backend (backend/)
+### AI Backend (backend/)
 
-- **main.py** — FastAPI server bridging Flutter ↔ Ollama. Exposes `/chat` (POST) and `/health` (GET) endpoints. Forwards messages to Gemma 4 via Ollama REST API at `http://localhost:11434`.
+- **main.py** — FastAPI server bridging Flutter ↔ Groq Cloud. Exposes `/chat` (POST), `/health` (GET), and `/` (GET) endpoints. Forwards messages to `llama-3.1-8b-instant` via Groq's OpenAI-compatible REST API at `https://api.groq.com/openai/v1`.
 - **requirements.txt** — Python dependencies: `fastapi`, `uvicorn`, `httpx`, `python-dotenv`.
-- **.env** — Configuration for `OLLAMA_HOST` and `OLLAMA_MODEL` (default: `gemma4:e2b`).
+- **.env** — Configuration for `GROQ_API_KEY` and `GROQ_MODEL` (default: `gemma2-9b-it`). Gitignored — use `.env.example` as template.
+- **render.yaml** — Render Infrastructure-as-Code config for one-click cloud deployment.
+- **Deployment**: Designed to run on Render free tier (auto-sleeps after 15 min inactivity, cold start ~30s). Can also run locally via `uvicorn main:app --host 0.0.0.0 --port 8000 --reload`.
 
 ### Firebase Backend (firebase/)
 
@@ -101,8 +103,9 @@ The mobile application utilizes a highly customized, premium high-fidelity desig
 - Flutter app uses `tflite_flutter` 0.12.0 for on-device inference.
 - Codemagic CI is configured via `codemagic.yaml` for mobile builds.
 - **Firebase backend** provides auth, Firestore database, Cloud Storage, and Cloud Functions (weather only). See `SETUP.md` for configuration.
-- **Plant AI Chat** uses Gemma 4 (`gemma4:e2b`) running locally via Ollama on the development machine, bridged by a FastAPI server. No cloud API keys needed for chat.
-- **Chat backend URL config** in `app_config.dart` uses a `_host` constant: set to `10.0.2.2` for Android emulator or the dev machine's local IP (e.g., `192.168.86.35`) for physical devices.
+- **Plant AI Chat** uses **Groq Cloud** hosting `llama-3.1-8b-instant`, bridged by a FastAPI server. The `GROQ_API_KEY` is stored only on the server (Render env var or local `.env`) — never shipped in the APK.
+- **Chat backend URL config** in `app_config.dart` uses a `BackendMode` enum with four modes: `render` (production, cloud-hosted, works anywhere 24/7), `ngrok` (public tunnel to local FastAPI), `localWifi` (local FastAPI via dev machine IP), and `emulator` (local FastAPI via `10.0.2.2`). Switch by changing the `backendMode` constant — default is `render`.
+- **Render deployment**: `backend/render.yaml` defines a free-tier web service. On push to main, Render auto-deploys the FastAPI backend with `GROQ_API_KEY` injected as an environment variable. Free tier spins down after 15 min inactivity (~30s cold start on first request).
 - **No weather API keys in app binary** — OpenWeatherMap key is stored as a Firebase secret and accessed only through the `weatherProxy` Cloud Function.
 - **Offline persistence** is enabled for Firestore — scan history works without connectivity.
 - Firebase config files (`google-services.json`, `GoogleService-Info.plist`, `firebase_options.dart`) are gitignored. New developers must run `flutterfire configure`.

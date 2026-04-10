@@ -1,9 +1,9 @@
 """
 FastAPI backend server for TomoLeafNet Plant AI Chat.
 
-Bridges the Flutter mobile app and Ollama running Gemma 4 locally.
+Bridges the Flutter mobile app and Groq Cloud (hosting Gemma 2).
 The mobile app sends chat requests here, and this server forwards
-them to the Ollama REST API at http://localhost:11434.
+them to the Groq OpenAI-compatible REST API.
 
 Usage:
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -20,8 +20,9 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e4b")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 SYSTEM_PROMPT = (
     "You are a plant health assistant for TomoLeafNet, specializing in tomato "
@@ -37,7 +38,7 @@ SYSTEM_PROMPT = (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage the shared httpx.AsyncClient lifecycle."""
-    app.state.http_client = httpx.AsyncClient(timeout=120.0)
+    app.state.http_client = httpx.AsyncClient(timeout=60.0)
     yield
     await app.state.http_client.aclose()
 
@@ -46,8 +47,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="TomoLeafNet Plant AI Backend",
-    description="Bridges Flutter ↔ Ollama (Gemma 4) for plant health chat.",
-    version="1.0.0",
+    description="Bridges Flutter ↔ Groq Cloud (Gemma 2) for plant health chat.",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -80,31 +81,53 @@ class ChatResponse(BaseModel):
 # ── Endpoints ────────────────────────────────────────────────────────
 
 
+@app.get("/")
+async def root():
+    """Simple root endpoint so Render's health checks pass."""
+    return {"service": "TomoLeafNet Plant AI Backend", "status": "running"}
+
+
 @app.get("/health")
 async def health_check():
-    """Check if the backend and Ollama are reachable."""
+    """Check if the backend can reach Groq Cloud."""
+    if not GROQ_API_KEY:
+        return {
+            "status": "degraded",
+            "groq": "not_configured",
+            "detail": "GROQ_API_KEY environment variable is not set.",
+        }
+
     client: httpx.AsyncClient = app.state.http_client
     try:
-        resp = await client.get(f"{OLLAMA_HOST}/api/tags")
+        resp = await client.get(
+            f"{GROQ_BASE_URL}/models",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+        )
         resp.raise_for_status()
-        models = resp.json().get("models", [])
-        model_names = [m.get("name", "") for m in models]
+        models = resp.json().get("data", [])
+        model_ids = [m.get("id", "") for m in models]
         return {
             "status": "ok",
-            "ollama": "connected",
-            "configured_model": OLLAMA_MODEL,
-            "available_models": model_names,
+            "groq": "connected",
+            "configured_model": GROQ_MODEL,
+            "model_available": GROQ_MODEL in model_ids,
         }
     except httpx.ConnectError:
         return {
             "status": "degraded",
-            "ollama": "unreachable",
-            "detail": f"Cannot connect to Ollama at {OLLAMA_HOST}. Is it running?",
+            "groq": "unreachable",
+            "detail": "Cannot connect to Groq Cloud.",
+        }
+    except httpx.HTTPStatusError as e:
+        return {
+            "status": "degraded",
+            "groq": "error",
+            "detail": f"Groq returned {e.response.status_code}: {e.response.text}",
         }
     except Exception as e:
         return {
             "status": "degraded",
-            "ollama": "error",
+            "groq": "error",
             "detail": str(e),
         }
 
@@ -113,14 +136,20 @@ async def health_check():
 async def chat(request: ChatRequest):
     """
     Accept a user message + conversation history from the Flutter app,
-    forward it to Ollama (Gemma 4), and return the AI response.
+    forward it to Groq Cloud (Gemma 2), and return the AI response.
     """
+    if not GROQ_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="GROQ_API_KEY is not configured on the server.",
+        )
+
     client: httpx.AsyncClient = app.state.http_client
 
-    # Build the Ollama messages array
+    # Build the OpenAI-compatible messages array
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    # Append conversation history (excluding the current message)
+    # Append conversation history
     for msg in request.history:
         role = "user" if msg.role == "user" else "assistant"
         messages.append({"role": role, "content": msg.text})
@@ -128,21 +157,29 @@ async def chat(request: ChatRequest):
     # Append the current user message
     messages.append({"role": "user", "content": request.message})
 
-    # Forward to Ollama
+    # Forward to Groq
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": GROQ_MODEL,
         "messages": messages,
         "stream": False,
+        "temperature": 0.7,
     }
 
     try:
         resp = await client.post(
-            f"{OLLAMA_HOST}/api/chat",
+            f"{GROQ_BASE_URL}/chat/completions",
             json=payload,
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
         )
         resp.raise_for_status()
         data = resp.json()
-        reply = data.get("message", {}).get("content", "")
+        choices = data.get("choices", [])
+        if not choices:
+            return ChatResponse(reply="Sorry, I could not generate a response.")
+        reply = choices[0].get("message", {}).get("content", "").strip()
         if not reply:
             reply = "Sorry, I could not generate a response."
         return ChatResponse(reply=reply)
@@ -150,23 +187,17 @@ async def chat(request: ChatRequest):
     except httpx.ConnectError:
         raise HTTPException(
             status_code=503,
-            detail=(
-                f"Cannot connect to Ollama at {OLLAMA_HOST}. "
-                "Please ensure Ollama is running: ollama serve"
-            ),
+            detail="Cannot connect to Groq Cloud. Please check your internet connection.",
         )
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=504,
-            detail=(
-                "Ollama took too long to respond. "
-                "The model may still be loading — please try again."
-            ),
+            detail="Groq took too long to respond. Please try again.",
         )
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Ollama returned an error: {e.response.text}",
+            detail=f"Groq returned an error: {e.response.text}",
         )
     except Exception as e:
         raise HTTPException(

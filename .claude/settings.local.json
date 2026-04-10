@@ -26,7 +26,10 @@
       "Bash(where.exe ollama:*)",
       "Read(//c/Users/iamha/AppData/Local/Programs/Ollama/**)",
       "Read(//c/Program Files/Ollama/**)",
-      "Read(//c/Users/iamha/**)"
+      "Read(//c/Users/iamha/**)",
+      "WebFetch(domain:console.groq.com)",
+      "Bash(venv/Scripts/pip install:*)",
+      "Bash(python -c \"import os; from dotenv import load_dotenv; load_dotenv\\('backend/.env'\\); k = os.getenv\\('GROQ_API_KEY', ''\\); print\\(f'Key length: {len\\(k\\)}'\\); print\\(f'Starts with: {k[:8]}...' if k else 'EMPTY'\\)\")"
     ]
   }
 }

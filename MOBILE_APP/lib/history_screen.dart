@@ -198,7 +198,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       confirmDismiss: (direction) async {
-        return await showDialog<bool>(
+        final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: Text('Delete Scan', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
@@ -215,11 +215,21 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ],
           ),
         );
+        if (confirmed != true) return false;
+        try {
+          await _storageService.deleteScanImage(uid: userId, scanId: scan.scanId);
+          await _firestoreService.deleteScan(userId, scan.scanId);
+          return true;
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to delete scan. Please try again.', style: GoogleFonts.spaceGrotesk())),
+            );
+          }
+          return false;
+        }
       },
-      onDismissed: (_) async {
-        await _storageService.deleteScanImage(uid: userId, scanId: scan.scanId);
-        await _firestoreService.deleteScan(userId, scan.scanId);
-      },
+      onDismissed: (_) {},
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(12),

@@ -70,8 +70,8 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = [
-    const HomeScreen(),
+  late final List<Widget> _screens = [
+    HomeScreen(onNavigateToRecentScans: () => setState(() => _currentIndex = 2)),
     const ChatScreen(),
     const HistoryScreen(),
     const MoreScreen(),

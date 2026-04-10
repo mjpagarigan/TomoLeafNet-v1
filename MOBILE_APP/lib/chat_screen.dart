@@ -123,7 +123,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
       appBar: AppBar(
-        title: Text('Plant AI (Gemma 4)', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
+        title: Text('Plant AI (Llama 3.1)', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
