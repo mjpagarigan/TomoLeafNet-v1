@@ -29,7 +29,15 @@
       "Read(//c/Users/iamha/**)",
       "WebFetch(domain:console.groq.com)",
       "Bash(venv/Scripts/pip install:*)",
-      "Bash(python -c \"import os; from dotenv import load_dotenv; load_dotenv\\('backend/.env'\\); k = os.getenv\\('GROQ_API_KEY', ''\\); print\\(f'Key length: {len\\(k\\)}'\\); print\\(f'Starts with: {k[:8]}...' if k else 'EMPTY'\\)\")"
+      "Bash(python -c \"import os; from dotenv import load_dotenv; load_dotenv\\('backend/.env'\\); k = os.getenv\\('GROQ_API_KEY', ''\\); print\\(f'Key length: {len\\(k\\)}'\\); print\\(f'Starts with: {k[:8]}...' if k else 'EMPTY'\\)\")",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(python -c \"import json; d=json.load\\(open\\('MOBILE_APP/android/app/google-services.json'\\)\\); c=d['client'][0]; print\\('package_name:', c['client_info']['android_client_info']['package_name']\\); print\\('oauth_clients:'\\); [print\\(' -', o.get\\('client_type'\\), o.get\\('client_id',''\\)[:60]\\) for o in c.get\\('oauth_client', []\\)]; print\\('oauth_client count:', len\\(c.get\\('oauth_client', []\\)\\)\\)\")",
+      "Bash(grep -l \"applicationId\" MOBILE_APP/android/app/build.gradle*)",
+      "Bash(grep \"applicationId\" MOBILE_APP/android/app/build.gradle*)",
+      "Bash(grep -iE \"firebase.*adminsdk|service.?account|\\\\.pem$|\\\\.key$|\\\\.env$\")",
+      "Bash(git check-ignore:*)",
+      "Bash(git push:*)"
     ]
   }
 }
