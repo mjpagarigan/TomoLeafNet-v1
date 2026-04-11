@@ -155,9 +155,9 @@ class DiagnoseResponse(BaseModel):
 # ── Endpoints ────────────────────────────────────────────────────────
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
-    """Simple root endpoint so Render's health checks pass."""
+    """Simple root endpoint so Render's health checks pass (GET + HEAD)."""
     return {"service": "TomoLeafNet Plant AI Backend", "status": "running"}
 
 
