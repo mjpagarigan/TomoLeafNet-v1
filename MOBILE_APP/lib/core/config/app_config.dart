@@ -50,6 +50,14 @@ class AppConfig {
   /// Base URL for the Plant AI chat backend (FastAPI server).
   static String get chatBackendUrl => '$_baseUrl/chat';
 
+  /// Diagnose endpoint for AI-generated treatment steps.
+  static String get diagnoseBackendUrl => '$_baseUrl/diagnose';
+
   /// Health check endpoint for the Plant AI backend.
   static String get chatBackendHealthUrl => '$_baseUrl/health';
+
+  // ── Reminder notification endpoints ───────────────────────────────
+  static String get reminderScheduleUrl => '$_baseUrl/reminders/schedule';
+  static String get reminderUpdateUrl => '$_baseUrl/reminders/update';
+  static String get reminderCancelUrl => '$_baseUrl/reminders/cancel';
 }

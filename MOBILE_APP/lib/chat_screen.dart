@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'models/scan_model.dart';
 import 'services/chat_service.dart';
+import 'services/firestore_service.dart';
 
 class ChatMessage {
   final String text;
@@ -26,17 +28,77 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ChatService _chatService = ChatService();
+  final FirestoreService _firestoreService = FirestoreService();
 
   final List<ChatMessage> _messages = [];
   bool _isTyping = false;
 
   static const List<String> _suggestedQuestions = [
-    "Why are my tomato leaves turning yellow?",
-    "How do I treat Late Blight?",
-    "What does Bacterial Spot look like?",
+    "What should I do about my recent Late Blight scan?",
+    "My confidence score was low — should I be worried?",
+    "How do I prevent Early Blight from spreading?",
+    "Is it safe to eat tomatoes from a diseased plant?",
+    "What's the best time to apply fungicide?",
   ];
 
   bool get _isAuthenticated => FirebaseAuth.instance.currentUser != null;
+
+  /// Fetch the user's 5 most recent scans from Firestore and format them
+  /// as the payload Tomo's backend expects. Returns an empty list on
+  /// failure so the chat still works offline or for brand-new users.
+  Future<List<Map<String, dynamic>>> _fetchScanHistoryPayload() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const [];
+    try {
+      final scans = await _firestoreService.getRecentScans(user.uid, limit: 5);
+      return scans.map(_scanToPayload).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Map<String, dynamic> _scanToPayload(ScanModel scan) {
+    return {
+      'disease': scan.predictedDisease,
+      'confidence': double.parse(
+        (scan.confidenceScore * 100).toStringAsFixed(1),
+      ),
+      'confidenceLabel': scan.confidenceLabel.isNotEmpty
+          ? scan.confidenceLabel
+          : ScanModel.getConfidenceLabel(scan.confidenceScore),
+      'scanType': scan.scanType,
+      'timestamp': _relativeTime(scan.timestamp),
+    };
+  }
+
+  /// Convert a DateTime into a human-readable relative time string
+  /// (e.g. "2 days ago", "3 hours ago") that Tomo can reference in replies.
+  String _relativeTime(DateTime when) {
+    final diff = DateTime.now().difference(when);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) {
+      final m = diff.inMinutes;
+      return '$m minute${m == 1 ? '' : 's'} ago';
+    }
+    if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return '$h hour${h == 1 ? '' : 's'} ago';
+    }
+    if (diff.inDays < 7) {
+      final d = diff.inDays;
+      return '$d day${d == 1 ? '' : 's'} ago';
+    }
+    if (diff.inDays < 30) {
+      final w = (diff.inDays / 7).floor();
+      return '$w week${w == 1 ? '' : 's'} ago';
+    }
+    if (diff.inDays < 365) {
+      final mo = (diff.inDays / 30).floor();
+      return '$mo month${mo == 1 ? '' : 's'} ago';
+    }
+    final y = (diff.inDays / 365).floor();
+    return '$y year${y == 1 ? '' : 's'} ago';
+  }
 
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty || !_isAuthenticated) return;
@@ -63,9 +125,14 @@ class _ChatScreenState extends State<ChatScreen> {
               })
           .toList();
 
+      // Fetch the user's 5 most recent scans so Tomo can give
+      // context-aware, confidence-calibrated replies.
+      final scanHistory = await _fetchScanHistoryPayload();
+
       final reply = await _chatService.sendMessage(
         message: text.trim(),
         history: history,
+        scanHistory: scanHistory,
       );
 
       setState(() {
@@ -123,7 +190,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
       appBar: AppBar(
-        title: Text('Plant AI (Llama 3.1)', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
+        title: Text('Tomo — Plant Assistant', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -147,10 +214,10 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.smart_toy_outlined, size: 80, color: const Color(0xFF309249).withAlpha(150)),
+            Icon(Icons.eco, size: 80, color: const Color(0xFF309249).withAlpha(150)),
             const SizedBox(height: 24),
             Text(
-              'AI Chat Assistant',
+              'Tomo — Plant Assistant',
               style: GoogleFonts.spaceGrotesk(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -159,7 +226,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Please sign in to use the AI chat assistant.',
+              'Please sign in to chat with Tomo about your plants.',
               textAlign: TextAlign.center,
               style: GoogleFonts.spaceGrotesk(
                 fontSize: 14,
@@ -227,20 +294,46 @@ class _ChatScreenState extends State<ChatScreen> {
         Expanded(
           child: _messages.isEmpty
               ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.eco, size: 60, color: const Color(0xFF309249).withAlpha(80)),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Ask me anything about\ntomato plant health!',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 16,
-                          color: theme.colorScheme.onSurface.withAlpha(100),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF309249).withAlpha(30),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.eco,
+                            size: 38,
+                            color: Color(0xFF309249),
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 20),
+                        Text(
+                          "Hi! I'm Tomo 🌿",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "your personal plant health assistant.\nAsk me anything about your tomato plants, recent scans, or how to treat leaf diseases.",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 14,
+                            height: 1.5,
+                            color: theme.colorScheme.onSurface.withAlpha(140),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : ListView.builder(

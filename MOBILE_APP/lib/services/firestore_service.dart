@@ -23,8 +23,10 @@ class FirestoreService {
     required String predictedDisease,
     required double confidenceScore,
     required String confidenceLabel,
+    required String scanType,
     String? imageUrl,
     GeoPoint? gpsCoordinates,
+    List<String>? treatmentSteps,
   }) async {
     final docRef = _firestore
         .collection('users')
@@ -41,6 +43,8 @@ class FirestoreService {
       confidenceLabel: confidenceLabel,
       timestamp: DateTime.now(),
       gpsCoordinates: gpsCoordinates,
+      scanType: scanType,
+      treatmentSteps: treatmentSteps,
     );
 
     await docRef.set(scan.toFirestore());
@@ -55,6 +59,20 @@ class FirestoreService {
         .collection('scans')
         .doc(scanId)
         .update({'imageUrl': imageUrl});
+  }
+
+  /// One-shot fetch of the user's N most recent scans, ordered by timestamp
+  /// descending. Used by the Plant AI chat to inject scan history context
+  /// into each request.
+  Future<List<ScanModel>> getRecentScans(String uid, {int limit = 5}) async {
+    final snapshot = await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('scans')
+        .orderBy('timestamp', descending: true)
+        .limit(limit)
+        .get();
+    return snapshot.docs.map((doc) => ScanModel.fromFirestore(doc)).toList();
   }
 
   /// Real-time stream of user's scans ordered by timestamp descending

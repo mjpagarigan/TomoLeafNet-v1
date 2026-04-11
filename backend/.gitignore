@@ -3,3 +3,7 @@ __pycache__/
 .env
 venv/
 .venv/
+
+# Firebase Admin SDK service account JSON — never commit
+*firebase-adminsdk*.json
+service-account*.json

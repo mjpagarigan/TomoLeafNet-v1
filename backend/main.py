@@ -20,6 +20,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from routers import reminders as reminders_router
+from services import fcm as fcm_service
+from services import scheduler as scheduler_service
+
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
@@ -72,10 +76,24 @@ DIAGNOSE_PROMPT_TEMPLATE = (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage the shared httpx.AsyncClient lifecycle."""
+    """Manage the shared httpx.AsyncClient lifecycle and reminder scheduler."""
     app.state.http_client = httpx.AsyncClient(timeout=60.0)
+
+    # Reminder notification subsystem (best-effort — failures here must not
+    # take down the chat/diagnose endpoints).
+    try:
+        fcm_service.init_firebase_admin()
+        scheduler_service.start_scheduler()
+    except Exception:
+        pass
+
     yield
+
     await app.state.http_client.aclose()
+    try:
+        scheduler_service.shutdown_scheduler()
+    except Exception:
+        pass
 
 
 # ── FastAPI app ──────────────────────────────────────────────────────
@@ -94,6 +112,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Reminder scheduling endpoints
+app.include_router(reminders_router.router)
 
 
 # ── Request / Response models ────────────────────────────────────────

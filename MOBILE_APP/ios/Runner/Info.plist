@@ -53,6 +53,13 @@
 	<string>This app uses your location to show local weather conditions and city-specific plant information.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>This app uses your location to show local weather conditions and city-specific plant information.</string>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>TomoLeafNet sends reminders for watering, fertilizing, and other plant care tasks you schedule.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 </dict>

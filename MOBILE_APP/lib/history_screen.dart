@@ -183,6 +183,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final isHealthy = scan.predictedDisease == 'Healthy';
     final displayName = _getDisplayName(scan.predictedDisease);
     final dateStr = DateFormat('MMM d, yyyy  h:mm a').format(scan.timestamp);
+    final isIdentify = scan.scanType == 'identify';
+    final isDiagnose = scan.scanType == 'diagnose';
 
     return Dismissible(
       key: Key(scan.scanId),
@@ -244,97 +246,169 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ],
         ),
-        child: Row(
+        child: Column(
           children: [
-            // Thumbnail from Cloud Storage
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                width: 60,
-                height: 60,
-                child: scan.imageUrl != null && scan.imageUrl!.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: scan.imageUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(
-                          color: isDark ? Colors.grey[800] : Colors.grey[200],
-                          child: const Center(
-                            child: SizedBox(
-                              width: 20, height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF309249)),
+            Row(
+              children: [
+                // Thumbnail from Cloud Storage
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: scan.imageUrl != null && scan.imageUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: scan.imageUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(
+                              color: isDark ? Colors.grey[800] : Colors.grey[200],
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 20, height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF309249)),
+                                ),
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => Container(
+                              color: isDark ? Colors.grey[800] : Colors.grey[200],
+                              child: Icon(Icons.eco, color: Colors.grey[400]),
+                            ),
+                          )
+                        : Container(
+                            color: isDark ? Colors.grey[800] : Colors.grey[200],
+                            child: Icon(Icons.eco, color: Colors.grey[400]),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Details
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              displayName,
+                              style: GoogleFonts.spaceGrotesk(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ),
-                        errorWidget: (_, __, ___) => Container(
-                          color: isDark ? Colors.grey[800] : Colors.grey[200],
-                          child: Icon(Icons.eco, color: Colors.grey[400]),
-                        ),
-                      )
-                    : Container(
-                        color: isDark ? Colors.grey[800] : Colors.grey[200],
-                        child: Icon(Icons.eco, color: Colors.grey[400]),
-                      ),
-              ),
-            ),
-            const SizedBox(width: 16),
-            // Details
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          displayName,
-                          style: GoogleFonts.spaceGrotesk(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: isDark ? Colors.white : Colors.black87,
+                          const SizedBox(width: 6),
+                          Icon(
+                            isHealthy ? Icons.check_circle : Icons.warning_rounded,
+                            color: isHealthy ? const Color(0xFF309249) : Colors.redAccent,
+                            size: 16,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        ],
                       ),
-                      const SizedBox(width: 6),
-                      Icon(
-                        isHealthy ? Icons.check_circle : Icons.warning_rounded,
-                        color: isHealthy ? const Color(0xFF309249) : Colors.redAccent,
-                        size: 16,
+                      const SizedBox(height: 4),
+                      Text(
+                        dateStr,
+                        style: GoogleFonts.spaceGrotesk(
+                          color: Colors.grey[500],
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    dateStr,
+                ),
+                // Confidence badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _getConfidenceBadgeColor(scan.confidenceScore, isDark),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    scan.confidenceLabel.isNotEmpty
+                        ? scan.confidenceLabel
+                        : '${(scan.confidenceScore * 100).toInt()}%',
                     style: GoogleFonts.spaceGrotesk(
-                      color: Colors.grey[500],
-                      fontSize: 12,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: _getConfidenceTextColor(scan.confidenceScore),
                     ),
                   ),
-                ],
-              ),
-            ),
-            // Confidence badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: _getConfidenceBadgeColor(scan.confidenceScore, isDark),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                scan.confidenceLabel.isNotEmpty
-                    ? scan.confidenceLabel
-                    : '${(scan.confidenceScore * 100).toInt()}%',
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: _getConfidenceTextColor(scan.confidenceScore),
                 ),
-              ),
+              ],
+            ),
+            // Scan type badges
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                // Scan type badge
+                _buildScanTypeBadge(
+                  label: isIdentify ? "Identify" : (isDiagnose ? "Diagnose" : "Scan"),
+                  color: isIdentify
+                      ? const Color(0xFF2D6A2E)
+                      : (isDiagnose ? const Color(0xFF455A64) : Colors.grey),
+                  icon: isDiagnose ? Icons.healing : null,
+                  isDark: isDark,
+                ),
+                const Spacer(),
+                // Show treatment indicator for diagnose scans
+                if (isDiagnose && scan.treatmentSteps != null && scan.treatmentSteps!.isNotEmpty)
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 14,
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        "${scan.treatmentSteps!.length} treatment steps",
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 11,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildScanTypeBadge({
+    required String label,
+    required Color color,
+    IconData? icon,
+    required bool isDark,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(isDark ? 0.3 : 0.15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark ? color.withOpacity(0.9) : color,
+            ),
+          ),
+        ],
       ),
     );
   }

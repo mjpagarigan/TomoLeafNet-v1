@@ -9,6 +9,8 @@ class ScanModel {
   final String confidenceLabel;
   final DateTime timestamp;
   final GeoPoint? gpsCoordinates;
+  final String scanType; // "identify" or "diagnose"
+  final List<String>? treatmentSteps; // only populated for "diagnose" scans
 
   ScanModel({
     required this.scanId,
@@ -19,6 +21,8 @@ class ScanModel {
     required this.confidenceLabel,
     required this.timestamp,
     this.gpsCoordinates,
+    this.scanType = 'identify',
+    this.treatmentSteps,
   });
 
   factory ScanModel.fromFirestore(DocumentSnapshot doc) {
@@ -32,6 +36,10 @@ class ScanModel {
       confidenceLabel: data['confidenceLabel'] ?? '',
       timestamp: (data['timestamp'] as Timestamp).toDate(),
       gpsCoordinates: data['gpsCoordinates'] as GeoPoint?,
+      scanType: data['scanType'] ?? 'identify', // backward compat
+      treatmentSteps: (data['treatmentSteps'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList(),
     );
   }
 
@@ -44,6 +52,8 @@ class ScanModel {
       'confidenceLabel': confidenceLabel,
       'timestamp': Timestamp.fromDate(timestamp),
       'gpsCoordinates': gpsCoordinates,
+      'scanType': scanType,
+      if (treatmentSteps != null) 'treatmentSteps': treatmentSteps,
     };
   }
 

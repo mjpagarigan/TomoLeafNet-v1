@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
-import 'theme_provider.dart';
 import 'weather_service.dart';
 import 'camera_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:metadata_fetch/metadata_fetch.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'core/data/articles_data.dart';
+import 'models/reminder_model.dart';
+import 'screens/article_reader_screen.dart';
+import 'screens/reminders_screen.dart';
+import 'services/reminder_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onNavigateToRecentScans;
@@ -92,20 +99,18 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final themeProvider = Provider.of<ThemeProvider>(context);
 
-    // Color definitions from Image
+    // Color definitions
     final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
     final cardColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF);
-    final badgeBgColor = isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5); // Very soft green
-    final gradientStart = const Color(0xFF5ED866);
+    final badgeBgColor = isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5);
     final gradientEnd = const Color(0xFF309249);
     final iconBgColor = badgeBgColor;
 
     final dropShadow = BoxShadow(
-      color: Colors.black.withOpacity(isDark ? 0.55 : 0.18), // Increased from 0.08 in light mode and 0.35 in dark mode
+      color: Colors.black.withOpacity(isDark ? 0.55 : 0.18),
       blurRadius: 28,
-      offset: const Offset(0, 14), // Dropped slightly further down to enhance the floating feel
+      offset: const Offset(0, 14),
     );
 
     return Scaffold(
@@ -161,159 +166,74 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
-                    // Theme Toggle masquerading as Health Badge
-                    GestureDetector(
-                      onTap: () => themeProvider.toggleTheme(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: badgeBgColor,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            const Text("🍅", style: TextStyle(fontSize: 18)),
-                            const SizedBox(width: 6),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "Tomato Plant",
-                                  style: GoogleFonts.spaceGrotesk(
-                                    color: isDark ? Colors.white70 : Colors.black87,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    height: 1.1,
-                                  ),
-                                ),
-                                Row(
-                                  children: [
-                                    Text(
-                                      "Health: ",
-                                      style: GoogleFonts.spaceGrotesk(
-                                        color: isDark ? Colors.white70 : Colors.black87,
-                                        fontSize: 10,
-                                        height: 1.1,
-                                      ),
-                                    ),
-                                    Text(
-                                      "Good",
-                                      style: GoogleFonts.spaceGrotesk(
-                                        color: gradientEnd,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 10,
-                                        height: 1.1,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+                    // Notification bell with live unread badge
+                    _NotificationBell(
+                      isDark: isDark,
+                      badgeBgColor: badgeBgColor,
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 32),
 
-              // Hero Card "Scan Leaf"
-              GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraScreen())),
-                child: Container(
-                  width: double.infinity,
-                  height: 240,
-                  // Add clipping so the scaled image doesn't overflow outside the rounded corners
-                  clipBehavior: Clip.hardEdge,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [gradientStart, gradientEnd],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: gradientEnd.withOpacity(isDark ? 0.8 : 0.65), // Intensified green glowing shadow
-                        blurRadius: 30, 
-                        offset: const Offset(0, 14),
-                      )
-                    ],
-                  ),
-                  child: Stack(
-                    children: [
-                      // 3D Plant Graphic 
-                      Positioned(
-                        right: -20,
-                        bottom: -100, // Aggressively pull down to eliminate bottom gap
-                        child: Transform.scale(
-                          scale: 1.5, 
-                          alignment: Alignment.center, // Center scale so it expands evenly
-                          child: Image.asset(
-                            'assets/images/tomato_plant.png',
-                            height: 350, // Massive height to fill the box length
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) {
-                              return const Icon(
-                                Icons.local_florist,
-                                size: 150,
-                                color: Colors.white24,
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                      // White camera icon at bottom left
-                      Positioned(
-                        bottom: 24,
-                        left: 24,
-                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 40),
-                      ),
-                      // Text content
-                      Positioned(
-                        top: 40,
-                        left: 24,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "Scan Leaf",
-                              style: GoogleFonts.spaceGrotesk(
-                                color: Colors.white,
-                                fontSize: 38,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                                shadows: [
-                                  Shadow(
-                                    offset: const Offset(0, 4),
-                                    blurRadius: 12.0,
-                                    color: Colors.black.withOpacity(0.6),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              "Detect diseases instantly.",
-                              style: GoogleFonts.spaceGrotesk(
-                                color: Colors.white.withOpacity(0.95),
-                                fontSize: 16,
-                                shadows: [
-                                  Shadow(
-                                    offset: const Offset(0, 2),
-                                    blurRadius: 10.0,
-                                    color: Colors.black.withOpacity(0.6),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+              // ── Scanning Section ──────────────────────────────────
+              Text(
+                "Scanning",
+                style: GoogleFonts.spaceGrotesk(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                  color: isDark ? Colors.white : Colors.black87,
                 ),
+              ),
+              const SizedBox(height: 16),
+
+              // Two side-by-side scanning cards
+              Row(
+                children: [
+                  // Card 1 — Identify
+                  Expanded(
+                    child: _buildScanningCard(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const CameraScreen(scanType: 'identify'),
+                        ),
+                      ),
+                      title: "Identify",
+                      subtitle: "Recognize\nany plant",
+                      backgroundColor: isDark
+                          ? const Color(0xFF1E4D2B)
+                          : const Color(0xFF2D6A2E),
+                      imagePath: 'assets/images/tomato_plant.png',
+                      isDark: isDark,
+                      imageHeight: 250,
+                      rightOffset: -30,
+                      bottomOffset: -40,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  // Card 2 — Diagnose
+                  Expanded(
+                    child: _buildScanningCard(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const CameraScreen(scanType: 'diagnose'),
+                        ),
+                      ),
+                      title: "Diagnose",
+                      subtitle: "Check your\nplant's health",
+                      backgroundColor: isDark
+                          ? const Color(0xFF2A2A2A)
+                          : const Color(0xFF3A3A3A),
+                      imagePath: 'assets/images/tomato_plant2.png',
+                      isDark: isDark,
+                      imageHeight: 280,
+                      rightOffset: -20,
+                      bottomOffset: -75,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 24),
 
@@ -348,8 +268,110 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 32),
+
+              // ── Articles Section ──────────────────────────────────
+              Text(
+                "Articles for You",
+                style: GoogleFonts.spaceGrotesk(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: hardcodedArticles.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  return ArticleCard(article: hardcodedArticles[index], isDark: isDark);
+                },
+              ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Builds a scanning card matching the reference UI design.
+  Widget _buildScanningCard({
+    required VoidCallback onTap,
+    required String title,
+    required String subtitle,
+    required Color backgroundColor,
+    required String imagePath,
+    required bool isDark,
+    double rightOffset = -25,
+    double bottomOffset = -20,
+    double imageHeight = 230,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 220,
+        clipBehavior: Clip.hardEdge,
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: backgroundColor.withOpacity(isDark ? 0.5 : 0.35),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Leaf image positioned at bottom-right, overflowing
+            Positioned(
+              right: rightOffset,
+              bottom: bottomOffset,
+              child: Image.asset(
+                imagePath,
+                height: imageHeight,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(
+                    Icons.local_florist,
+                    size: 80,
+                    color: Colors.white.withOpacity(0.15),
+                  );
+                },
+              ),
+            ),
+            // Text content at top-left
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.spaceGrotesk(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.spaceGrotesk(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 14,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -366,13 +388,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }) {
     return Container(
       padding: const EdgeInsets.all(20),
-      // Set fixed height to ensure cards are square-ish
       height: 180,
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
-          // Apply the same darkened shadow logic as the top header
           BoxShadow(
             color: Colors.black.withOpacity(isDark ? 0.55 : 0.18), 
             blurRadius: 28, 
@@ -414,6 +434,319 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Notification bell with a live unread badge driven by a Firestore stream
+/// of the user's reminders. Tapping it opens the [RemindersScreen].
+class _NotificationBell extends StatelessWidget {
+  final bool isDark;
+  final Color badgeBgColor;
+
+  const _NotificationBell({
+    required this.isDark,
+    required this.badgeBgColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final iconColor = isDark ? Colors.white : Colors.black87;
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const RemindersScreen()),
+      ),
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: badgeBgColor,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(Icons.notifications_none_rounded, color: iconColor, size: 24),
+            if (user != null)
+              StreamBuilder<List<ReminderModel>>(
+                stream: ReminderService().streamReminders(user.uid),
+                builder: (context, snap) {
+                  final count = _unreadCountForToday(snap.data ?? const []);
+                  if (count == 0) return const SizedBox.shrink();
+                  return Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: count > 9 ? 4 : 5,
+                        vertical: 1,
+                      ),
+                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: badgeBgColor, width: 1.5),
+                      ),
+                      child: Text(
+                        count > 9 ? '9+' : '$count',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.spaceGrotesk(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Count expired-and-uncompleted reminders for today plus reminders that
+  /// fire later today and are still pending.
+  int _unreadCountForToday(List<ReminderModel> reminders) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    int count = 0;
+    for (final r in reminders) {
+      if (r.isCompleted) continue;
+      // Walk occurrences from startDate forward to find one falling today
+      DateTime cursor = DateTime(
+        r.startDate.year,
+        r.startDate.month,
+        r.startDate.day,
+        r.notifyTime.hour,
+        r.notifyTime.minute,
+      );
+      var safety = 200;
+      while (safety-- > 0 && cursor.isBefore(tomorrow)) {
+        if (!cursor.isBefore(today)) {
+          count++;
+          break;
+        }
+        final next = r.repeat.nextAfter(cursor);
+        if (next == null) break;
+        cursor = next;
+      }
+    }
+    return count;
+  }
+}
+
+class ArticleCard extends StatefulWidget {
+  final ArticleModel article;
+  final bool isDark;
+
+  const ArticleCard({super.key, required this.article, required this.isDark});
+
+  @override
+  State<ArticleCard> createState() => _ArticleCardState();
+}
+
+class _ArticleCardState extends State<ArticleCard> {
+  String? _fetchedImageUrl;
+  bool _isRead = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMetadata();
+    _checkIfRead();
+  }
+
+  Future<void> _fetchMetadata() async {
+    try {
+      final data = await MetadataFetch.extract(widget.article.url);
+      if (data?.image != null && mounted) {
+        setState(() {
+          _fetchedImageUrl = data!.image;
+        });
+      }
+    } catch (_) {
+      // Fallback to local image will happen implicitly
+    }
+  }
+
+  Future<void> _checkIfRead() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final safeId = widget.article.url.replaceAll(RegExp(r'[^\w\s]+'), '_');
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('readArticles')
+            .doc(safeId)
+            .get();
+        if (doc.exists && mounted) {
+          setState(() {
+            _isRead = true;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Color _getAudienceColor(String audience) {
+    switch (audience.toLowerCase()) {
+      case 'beginner':
+        return Colors.green;
+      case 'intermediate':
+        return Colors.orange;
+      case 'expert':
+        return Colors.red;
+      default:
+        return Colors.blue;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ArticleReaderScreen(article: widget.article),
+          ),
+        );
+        // Refresh read status when coming back
+        _checkIfRead();
+      },
+      child: Container(
+        height: 200,
+        clipBehavior: Clip.hardEdge,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          color: widget.isDark ? const Color(0xFF1E1E1E) : Colors.grey[200],
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Cover Image
+            _fetchedImageUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: _fetchedImageUrl!,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(
+                      color: widget.isDark ? Colors.grey[800] : Colors.grey[300],
+                    ),
+                    errorWidget: (context, url, error) => Image.asset(
+                      widget.article.coverImageUrl,
+                      fit: BoxFit.cover,
+                    ),
+                  )
+                : Image.asset(
+                    widget.article.coverImageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: const Color(0xFF1E4D2B),
+                    ),
+                  ),
+
+            // Gradient Overlay
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.transparent, Colors.black87],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0.3, 1.0],
+                ),
+              ),
+            ),
+
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Top Row: Audience Badge & Read Indicator
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _getAudienceColor(widget.article.audience).withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          widget.article.audience,
+                          style: GoogleFonts.spaceGrotesk(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      if (_isRead)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle, color: Colors.greenAccent, size: 12),
+                              const SizedBox(width: 4),
+                              Text(
+                                "Read",
+                                style: GoogleFonts.spaceGrotesk(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+
+                  // Bottom Content: Title & Source
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.article.title,
+                        style: GoogleFonts.spaceGrotesk(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          height: 1.2,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        widget.article.source,
+                        style: GoogleFonts.spaceGrotesk(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

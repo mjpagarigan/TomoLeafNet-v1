@@ -2,11 +2,16 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'result_screen.dart';
+import 'identify_result_screen.dart';
+import 'diagnose_result_screen.dart';
 import 'main.dart'; // To access global 'cameras' list
 
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key});
+  /// The scan type determines which result screen to navigate to.
+  /// Must be "identify" or "diagnose".
+  final String scanType;
+
+  const CameraScreen({super.key, required this.scanType});
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -100,20 +105,29 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
+  /// Navigate to the appropriate result screen based on scanType.
+  void _navigateToResult(String imagePath) {
+    final Widget resultScreen;
+    if (widget.scanType == 'diagnose') {
+      resultScreen = DiagnoseResultScreen(imagePath: imagePath);
+    } else {
+      resultScreen = IdentifyResultScreen(imagePath: imagePath);
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => resultScreen),
+    );
+  }
+
   Future<void> _takePicture() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
 
     try {
-      // Ensure flash mode is explicitly set before capture to prevent auto-flash loop
       await _controller!.setFlashMode(_flashMode);
       final image = await _controller!.takePicture();
       if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ResultScreen(imagePath: image.path),
-          ),
-        );
+        _navigateToResult(image.path);
       }
     } catch (e) {
       print("Error taking picture: $e");
@@ -124,12 +138,7 @@ class _CameraScreenState extends State<CameraScreen> {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null && mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ResultScreen(imagePath: pickedFile.path),
-        ),
-      );
+      _navigateToResult(pickedFile.path);
     }
   }
 
@@ -141,6 +150,11 @@ class _CameraScreenState extends State<CameraScreen> {
         body: Center(child: CircularProgressIndicator(color: Color(0xFF13EC13))),
       );
     }
+
+    // Show which mode is active
+    final isIdentify = widget.scanType == 'identify';
+    final modeColor = isIdentify ? const Color(0xFF4CAF50) : const Color(0xFF78909C);
+    final modeLabel = isIdentify ? "Identify Mode" : "Diagnose Mode";
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -173,6 +187,34 @@ class _CameraScreenState extends State<CameraScreen> {
                         icon: const Icon(Icons.close, color: Colors.white, size: 30),
                         onPressed: () => Navigator.pop(context),
                       ),
+                      // Mode indicator badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: modeColor.withOpacity(0.25),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: modeColor.withOpacity(0.5)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isIdentify ? Icons.search : Icons.healing,
+                              color: modeColor,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              modeLabel,
+                              style: GoogleFonts.spaceGrotesk(
+                                color: modeColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       const Icon(Icons.info_outline, color: Colors.white, size: 30),
                     ],
                   ),
@@ -194,7 +236,7 @@ class _CameraScreenState extends State<CameraScreen> {
                          width: 40, height: 40,
                          decoration: BoxDecoration(
                            borderRadius: BorderRadius.circular(8),
-                           color: Color(0xFF13EC13).withAlpha(50),
+                           color: const Color(0xFF13EC13).withAlpha(50),
                          ),
                          child: const Icon(Icons.eco, color: Color(0xFF13EC13)),
                        ),
@@ -239,13 +281,13 @@ class _CameraScreenState extends State<CameraScreen> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.white, width: 4),
-                            color: Colors.white, // Inner white circle
+                            color: Colors.white,
                           ),
                           child: Container(
                             margin: const EdgeInsets.all(4),
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.white, // Inner solid
+                              color: Colors.white,
                             ),
                           ),
                         ),
@@ -281,7 +323,7 @@ class ScannerOverlayPainter extends CustomPainter {
     
     // Calculate the scanning box (centered square)
     final double boxSize = size.width - (margin * 2);
-    final double topOffset = (size.height - boxSize) / 2 - 50; // shift up slightly
+    final double topOffset = (size.height - boxSize) / 2 - 50;
 
     final Path path = Path();
 
@@ -304,15 +346,8 @@ class ScannerOverlayPainter extends CustomPainter {
     path.moveTo(margin + cornerLength, topOffset + boxSize);
     path.lineTo(margin, topOffset + boxSize);
     path.lineTo(margin, topOffset + boxSize - cornerLength);
-
-    // Add rounded corners
-    // (Simplified for now with straight lines, but looks like corners)
     
     canvas.drawPath(path, paint);
-
-    // Optional: Darken background outside the box (scrim)
-    final scaffoldPaint = Paint()..color = Colors.black45;
-    // can draw rects around...
   }
 
   @override
