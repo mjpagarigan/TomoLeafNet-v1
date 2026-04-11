@@ -1,21 +1,35 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'diagnose_result_screen.dart';
+import 'models/scan_model.dart';
 import 'services/tflite_service.dart';
+import 'services/diagnose_service.dart';
 import 'services/firestore_service.dart';
 import 'services/storage_service.dart';
 
 /// Identify Result Screen — disease detection only, no treatment info.
 ///
-/// Displays the captured leaf image, detected disease name, and confidence
-/// label. Saves the result to Firestore as an "identify" type scan.
+/// Two modes:
+///   1. Live scan (imagePath supplied) — runs TFLite inference and saves a
+///      new "identify" scan document.
+///   2. History view (historyScan supplied) — rehydrates the UI from an
+///      existing Firestore scan document and loads the leaf image from
+///      Cloud Storage via cached_network_image.
 class IdentifyResultScreen extends StatefulWidget {
-  final String imagePath;
+  final String? imagePath;
+  final ScanModel? historyScan;
 
-  const IdentifyResultScreen({super.key, required this.imagePath});
+  const IdentifyResultScreen({
+    super.key,
+    this.imagePath,
+    this.historyScan,
+  }) : assert(imagePath != null || historyScan != null,
+            'Provide either imagePath (live scan) or historyScan (history)');
 
   @override
   State<IdentifyResultScreen> createState() => _IdentifyResultScreenState();
@@ -24,6 +38,7 @@ class IdentifyResultScreen extends StatefulWidget {
 class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     with SingleTickerProviderStateMixin {
   final _tfliteService = TFLiteService();
+  final _diagnoseService = DiagnoseService();
   final _firestoreService = FirestoreService();
   final _storageService = StorageService();
 
@@ -31,12 +46,21 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   TFLiteResult? _result;
   String _errorMessage = "";
 
-  // Firebase save state
+  // Firebase save state (live scan only)
   bool _isSaving = false;
   bool _isSaved = false;
+  String? _savedScanId;
+
+  // Diagnose This Leaf upgrade state
+  bool _isDiagnosing = false;
+  bool _hasUpgraded = false;
+  List<String>? _upgradedTreatmentSteps;
+  String _diagnoseError = "";
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
+
+  bool get _isHistory => widget.historyScan != null;
 
   @override
   void initState() {
@@ -49,7 +73,12 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       parent: _fadeController,
       curve: Curves.easeOut,
     );
-    _runPrediction();
+
+    if (_isHistory) {
+      _hydrateFromHistory();
+    } else {
+      _runPrediction();
+    }
   }
 
   @override
@@ -59,9 +88,22 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     super.dispose();
   }
 
+  void _hydrateFromHistory() {
+    final scan = widget.historyScan!;
+    _result = TFLiteResult(
+      label: scan.predictedDisease,
+      index: 0,
+      confidence: scan.confidenceScore,
+    );
+    _isLoading = false;
+    _savedScanId = scan.scanId;
+    _isSaved = true;
+    _fadeController.forward();
+  }
+
   Future<void> _runPrediction() async {
     try {
-      final result = await _tfliteService.predict(widget.imagePath);
+      final result = await _tfliteService.predict(widget.imagePath!);
       if (mounted) {
         setState(() {
           _result = result;
@@ -113,17 +155,94 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       final imageUrl = await _storageService.uploadScanImage(
         uid: user.uid,
         scanId: scanId,
-        localImagePath: widget.imagePath,
+        localImagePath: widget.imagePath!,
       );
 
       await _firestoreService.updateScanImageUrl(user.uid, scanId, imageUrl);
 
-      if (mounted) setState(() => _isSaved = true);
+      if (mounted) {
+        setState(() {
+          _isSaved = true;
+          _savedScanId = scanId;
+        });
+      }
     } catch (e) {
       print('Error saving scan: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  /// POST to /diagnose, upgrade the Firestore scan doc, then push the
+  /// Diagnose result screen with the treatment steps populated.
+  Future<void> _onDiagnoseThisLeaf() async {
+    if (_result == null || _isDiagnosing) return;
+
+    // If we already have treatment steps (user re-entered screen via
+    // history after upgrading), jump straight to the Diagnose screen.
+    if (_hasUpgraded && _upgradedTreatmentSteps != null) {
+      _openDiagnoseResult(_upgradedTreatmentSteps!);
+      return;
+    }
+
+    setState(() {
+      _isDiagnosing = true;
+      _diagnoseError = "";
+    });
+
+    try {
+      final steps = await _diagnoseService.getTreatmentSteps(
+        disease: _result!.label,
+        confidence: double.parse(
+            (_result!.confidence * 100).toStringAsFixed(1)),
+      );
+
+      // Persist the upgrade
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null && _savedScanId != null) {
+        try {
+          await _firestoreService.upgradeScanToDiagnose(
+            uid: user.uid,
+            scanId: _savedScanId!,
+            treatmentSteps: steps,
+          );
+        } catch (e) {
+          print('Failed to upgrade scan to diagnose: $e');
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isDiagnosing = false;
+        _hasUpgraded = true;
+        _upgradedTreatmentSteps = steps;
+      });
+      _openDiagnoseResult(steps);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isDiagnosing = false;
+        _diagnoseError =
+            "Treatment advice unavailable. Please check your connection and try again.";
+      });
+    }
+  }
+
+  void _openDiagnoseResult(List<String> steps) {
+    if (_result == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DiagnoseResultScreen.preloaded(
+          label: _result!.label,
+          confidence: _result!.confidence,
+          treatmentSteps: steps,
+          localImagePath: widget.imagePath,
+          remoteImageUrl: widget.historyScan?.imageUrl,
+          upgradedFromIdentify: true,
+        ),
+      ),
+    );
   }
 
   @override
@@ -140,6 +259,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -177,38 +297,34 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             Stack(
               alignment: Alignment.topCenter,
               children: [
-                Container(
+                SizedBox(
                   width: double.infinity,
                   height: 350,
-                  decoration: BoxDecoration(
-                    image: DecorationImage(
-                      image: FileImage(File(widget.imagePath)),
-                      fit: BoxFit.cover,
+                  child: _buildHeroImage(isDark),
+                ),
+                if (_isLoading)
+                  Container(
+                    width: double.infinity,
+                    height: 350,
+                    color: Colors.black54,
+                    alignment: Alignment.center,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const CircularProgressIndicator(
+                          color: Color(0xFF4CAF50),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          "Identifying...",
+                          style: GoogleFonts.spaceGrotesk(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  child: _isLoading
-                      ? Container(
-                          color: Colors.black54,
-                          alignment: Alignment.center,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const CircularProgressIndicator(
-                                color: Color(0xFF4CAF50),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                "Identifying...",
-                                style: GoogleFonts.spaceGrotesk(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : null,
-                ),
                 // Status Badge
                 if (!_isLoading && _result != null)
                   Positioned(
@@ -292,6 +408,12 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           ),
                         ],
                       ),
+                    ),
+
+                    // ── Diagnose This Leaf CTA ──
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+                      child: _buildDiagnoseCta(isDark),
                     ),
 
                     // Detailed info card
@@ -392,6 +514,146 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildHeroImage(bool isDark) {
+    // History mode: load from Cloud Storage URL
+    if (_isHistory) {
+      final url = widget.historyScan!.imageUrl;
+      if (url != null && url.isNotEmpty) {
+        return CachedNetworkImage(
+          imageUrl: url,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => Container(
+            color: isDark ? Colors.grey[900] : Colors.grey[200],
+            alignment: Alignment.center,
+            child: const CircularProgressIndicator(color: Color(0xFF309249)),
+          ),
+          errorWidget: (_, __, ___) => Container(
+            color: isDark ? Colors.grey[900] : Colors.grey[200],
+            alignment: Alignment.center,
+            child: Icon(Icons.broken_image,
+                size: 64, color: Colors.grey[500]),
+          ),
+        );
+      }
+      return Container(
+        color: isDark ? Colors.grey[900] : Colors.grey[200],
+        alignment: Alignment.center,
+        child: Icon(Icons.eco, size: 64, color: Colors.grey[500]),
+      );
+    }
+    // Live scan: local file
+    return Image.file(File(widget.imagePath!), fit: BoxFit.cover);
+  }
+
+  Widget _buildDiagnoseCta(bool isDark) {
+    // Determine whether we already have treatment info. If the history scan
+    // is already a "diagnose" type, collapse the CTA into a "View Treatment"
+    // shortcut so we never call /diagnose twice for the same scan.
+    final historyHasTreatment = _isHistory &&
+        widget.historyScan!.scanType == 'diagnose' &&
+        (widget.historyScan!.treatmentSteps?.isNotEmpty ?? false);
+    final alreadyUpgraded = _hasUpgraded;
+    final isViewOnly = historyHasTreatment || alreadyUpgraded;
+
+    if (_isDiagnosing) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFF309249).withOpacity(0.15),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: Color(0xFF309249),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              "Analyzing treatment...",
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF309249),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () {
+              if (isViewOnly && historyHasTreatment) {
+                _openDiagnoseResult(widget.historyScan!.treatmentSteps!);
+              } else {
+                _onDiagnoseThisLeaf();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF309249),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              elevation: 0,
+            ),
+            child: Text(
+              isViewOnly ? "View Treatment" : "Diagnose This Leaf 🌿",
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+        if (_diagnoseError.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF44336).withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFFF44336).withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.wifi_off,
+                    color: Color(0xFFF44336), size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _diagnoseError,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 13,
+                      color: const Color(0xFFF44336),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 

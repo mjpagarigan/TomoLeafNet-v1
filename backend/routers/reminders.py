@@ -7,9 +7,11 @@ that fires an FCM push notification at the scheduled time(s).
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from services import scheduler as scheduler_svc
@@ -39,8 +41,31 @@ class GenericResponse(BaseModel):
     detail: str = ""
 
 
+def _validate_not_in_past(req: ScheduleRequest):
+    """Return a 400 JSONResponse if the computed start + notify is in the past."""
+    try:
+        year, month, day = (int(p) for p in req.startDate.split("-"))
+        hour, minute = (int(p) for p in req.notifyTime.split(":"))
+        scheduled = datetime(year, month, day, hour, minute)
+        if scheduled < datetime.now():
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "Cannot schedule a reminder in the past.",
+                    "code": 400,
+                },
+            )
+    except (ValueError, IndexError):
+        pass
+    return None
+
+
 @router.post("/schedule", response_model=GenericResponse)
-async def schedule_reminder(req: ScheduleRequest) -> GenericResponse:
+async def schedule_reminder(req: ScheduleRequest):
+    rejection = _validate_not_in_past(req)
+    if rejection is not None:
+        return rejection
+
     try:
         scheduler_svc.schedule_reminder_job(
             reminder_id=req.reminderId,
@@ -59,7 +84,11 @@ async def schedule_reminder(req: ScheduleRequest) -> GenericResponse:
 
 
 @router.post("/update", response_model=GenericResponse)
-async def update_reminder(req: ScheduleRequest) -> GenericResponse:
+async def update_reminder(req: ScheduleRequest):
+    rejection = _validate_not_in_past(req)
+    if rejection is not None:
+        return rejection
+
     try:
         scheduler_svc.cancel_reminder_job(req.reminderId)
         scheduler_svc.schedule_reminder_job(

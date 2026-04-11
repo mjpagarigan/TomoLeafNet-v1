@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'models/scan_model.dart';
+import 'identify_result_screen.dart';
+import 'diagnose_result_screen.dart';
 import 'services/firestore_service.dart';
 import 'services/storage_service.dart';
 
@@ -118,6 +120,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             );
                           }
 
+                          final diseaseNumbers = _computeDiseaseNumbers(filteredScans);
+
                           return ListView.builder(
                             itemCount: filteredScans.length,
                             itemBuilder: (context, index) {
@@ -125,6 +129,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 scan: filteredScans[index],
                                 isDark: isDark,
                                 userId: user.uid,
+                                diseaseNumber: diseaseNumbers[index],
                               );
                             },
                           );
@@ -175,13 +180,36 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
+  /// Returns a list parallel to [scans] where each entry is null (no
+  /// numbering needed) or the 1-based occurrence index for that disease.
+  List<int?> _computeDiseaseNumbers(List<ScanModel> scans) {
+    final counts = <String, int>{};
+    for (final s in scans) {
+      counts[s.predictedDisease] = (counts[s.predictedDisease] ?? 0) + 1;
+    }
+
+    final tracker = <String, int>{};
+    final result = <int?>[];
+    for (final s in scans.reversed) {
+      if (counts[s.predictedDisease]! > 1) {
+        tracker[s.predictedDisease] = (tracker[s.predictedDisease] ?? 0) + 1;
+        result.add(tracker[s.predictedDisease]);
+      } else {
+        result.add(null);
+      }
+    }
+    return result.reversed.toList();
+  }
+
   Widget _buildScanCard({
     required ScanModel scan,
     required bool isDark,
     required String userId,
+    int? diseaseNumber,
   }) {
     final isHealthy = scan.predictedDisease == 'Healthy';
-    final displayName = _getDisplayName(scan.predictedDisease);
+    final baseName = _getDisplayName(scan.predictedDisease);
+    final displayName = diseaseNumber != null ? '$baseName #$diseaseNumber' : baseName;
     final dateStr = DateFormat('MMM d, yyyy  h:mm a').format(scan.timestamp);
     final isIdentify = scan.scanType == 'identify';
     final isDiagnose = scan.scanType == 'diagnose';
@@ -232,152 +260,196 @@ class _HistoryScreenState extends State<HistoryScreen> {
         }
       },
       onDismissed: (_) {},
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                // Thumbnail from Cloud Storage
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    width: 60,
-                    height: 60,
-                    child: scan.imageUrl != null && scan.imageUrl!.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: scan.imageUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) => Container(
-                              color: isDark ? Colors.grey[800] : Colors.grey[200],
-                              child: const Center(
-                                child: SizedBox(
-                                  width: 20, height: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF309249)),
+      child: GestureDetector(
+        onTap: () => _openScanResult(scan),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  // Thumbnail from Cloud Storage
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      width: 60,
+                      height: 60,
+                      child: scan.imageUrl != null && scan.imageUrl!.isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl: scan.imageUrl!,
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) => Container(
+                                color: isDark ? Colors.grey[800] : Colors.grey[200],
+                                child: const Center(
+                                  child: SizedBox(
+                                    width: 20, height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF309249)),
+                                  ),
                                 ),
                               ),
-                            ),
-                            errorWidget: (_, __, ___) => Container(
+                              errorWidget: (_, __, ___) => Container(
+                                color: isDark ? Colors.grey[800] : Colors.grey[200],
+                                child: Icon(Icons.eco, color: Colors.grey[400]),
+                              ),
+                            )
+                          : Container(
                               color: isDark ? Colors.grey[800] : Colors.grey[200],
                               child: Icon(Icons.eco, color: Colors.grey[400]),
                             ),
-                          )
-                        : Container(
-                            color: isDark ? Colors.grey[800] : Colors.grey[200],
-                            child: Icon(Icons.eco, color: Colors.grey[400]),
-                          ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                // Details
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              displayName,
-                              style: GoogleFonts.spaceGrotesk(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: isDark ? Colors.white : Colors.black87,
+                  const SizedBox(width: 16),
+                  // Details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                displayName,
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
+                            const SizedBox(width: 6),
+                            Icon(
+                              isHealthy ? Icons.check_circle : Icons.warning_rounded,
+                              color: isHealthy ? const Color(0xFF309249) : Colors.redAccent,
+                              size: 16,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          dateStr,
+                          style: GoogleFonts.spaceGrotesk(
+                            color: Colors.grey[500],
+                            fontSize: 12,
                           ),
-                          const SizedBox(width: 6),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Confidence badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _getConfidenceBadgeColor(scan.confidenceScore, isDark),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      scan.confidenceLabel.isNotEmpty
+                          ? scan.confidenceLabel
+                          : '${(scan.confidenceScore * 100).toInt()}%',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: _getConfidenceTextColor(scan.confidenceScore),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              // Scan type badges + View Result
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  // Scan type badge
+                  _buildScanTypeBadge(
+                    label: isIdentify ? "Identify" : (isDiagnose ? "Diagnose" : "Scan"),
+                    color: isIdentify
+                        ? const Color(0xFF2D6A2E)
+                        : (isDiagnose ? const Color(0xFF455A64) : Colors.grey),
+                    icon: isDiagnose ? Icons.healing : null,
+                    isDark: isDark,
+                  ),
+                  const Spacer(),
+                  // Show treatment indicator for diagnose scans
+                  if (isDiagnose && scan.treatmentSteps != null && scan.treatmentSteps!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Row(
+                        children: [
                           Icon(
-                            isHealthy ? Icons.check_circle : Icons.warning_rounded,
-                            color: isHealthy ? const Color(0xFF309249) : Colors.redAccent,
-                            size: 16,
+                            Icons.check_circle_outline,
+                            size: 14,
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            "${scan.treatmentSteps!.length} steps",
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        dateStr,
-                        style: GoogleFonts.spaceGrotesk(
-                          color: Colors.grey[500],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Confidence badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _getConfidenceBadgeColor(scan.confidenceScore, isDark),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    scan.confidenceLabel.isNotEmpty
-                        ? scan.confidenceLabel
-                        : '${(scan.confidenceScore * 100).toInt()}%',
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: _getConfidenceTextColor(scan.confidenceScore),
                     ),
-                  ),
-                ),
-              ],
-            ),
-            // Scan type badges
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                // Scan type badge
-                _buildScanTypeBadge(
-                  label: isIdentify ? "Identify" : (isDiagnose ? "Diagnose" : "Scan"),
-                  color: isIdentify
-                      ? const Color(0xFF2D6A2E)
-                      : (isDiagnose ? const Color(0xFF455A64) : Colors.grey),
-                  icon: isDiagnose ? Icons.healing : null,
-                  isDark: isDark,
-                ),
-                const Spacer(),
-                // Show treatment indicator for diagnose scans
-                if (isDiagnose && scan.treatmentSteps != null && scan.treatmentSteps!.isNotEmpty)
+                  // View Result indicator
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.check_circle_outline,
-                        size: 14,
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                      ),
-                      const SizedBox(width: 4),
                       Text(
-                        "${scan.treatmentSteps!.length} treatment steps",
+                        "View Result",
                         style: GoogleFonts.spaceGrotesk(
                           fontSize: 11,
-                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF309249),
                         ),
+                      ),
+                      const SizedBox(width: 2),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: Color(0xFF309249),
                       ),
                     ],
                   ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  void _openScanResult(ScanModel scan) {
+    if (scan.scanType == 'diagnose') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DiagnoseResultScreen.history(historyScan: scan),
+        ),
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => IdentifyResultScreen(historyScan: scan),
+        ),
+      );
+    }
   }
 
   Widget _buildScanTypeBadge({

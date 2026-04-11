@@ -5,6 +5,14 @@ import 'package:http/http.dart' as http;
 import '../core/config/app_config.dart';
 import '../models/reminder_model.dart';
 
+/// Thrown when the backend explicitly rejects a reminder request (e.g. 400).
+class ReminderBackendException implements Exception {
+  final String message;
+  const ReminderBackendException(this.message);
+  @override
+  String toString() => message;
+}
+
 /// HTTP client for the Render-hosted FastAPI reminder endpoints:
 ///   POST /reminders/schedule
 ///   POST /reminders/update
@@ -12,7 +20,7 @@ import '../models/reminder_model.dart';
 ///
 /// All methods are best-effort: failures are caught and logged so the
 /// local notification + Firestore write still succeed when the backend is
-/// unavailable.
+/// unavailable. 400 errors are surfaced as [ReminderBackendException].
 class RemindersBackend {
   RemindersBackend._();
   static final RemindersBackend instance = RemindersBackend._();
@@ -76,9 +84,23 @@ class RemindersBackend {
             body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 15));
-      return resp.statusCode >= 200 && resp.statusCode < 300;
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return true;
+      }
+      if (resp.statusCode == 400) {
+        try {
+          final data = jsonDecode(resp.body) as Map<String, dynamic>;
+          throw ReminderBackendException(
+            data['error'] as String? ?? 'Invalid request.',
+          );
+        } catch (e) {
+          if (e is ReminderBackendException) rethrow;
+          throw const ReminderBackendException('Invalid request.');
+        }
+      }
+      return false;
     } catch (e) {
-      // Best-effort — local notification still fires.
+      if (e is ReminderBackendException) rethrow;
       return false;
     }
   }

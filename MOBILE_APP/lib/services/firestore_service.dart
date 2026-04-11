@@ -61,6 +61,42 @@ class FirestoreService {
         .update({'imageUrl': imageUrl});
   }
 
+  /// Upgrade an existing "identify" scan to "diagnose" after the user taps
+  /// the Diagnose This Leaf button and treatment steps are retrieved.
+  Future<void> upgradeScanToDiagnose({
+    required String uid,
+    required String scanId,
+    required List<String> treatmentSteps,
+  }) async {
+    await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('scans')
+        .doc(scanId)
+        .update({
+      'scanType': 'diagnose',
+      'treatmentSteps': treatmentSteps,
+    });
+  }
+
+  /// One-shot migration: rewrite any reminder whose plantName is
+  /// "Solanum lycopersicum" to the user-friendly "Tomato" label.
+  Future<void> migrateReminderPlantNameToTomato(String uid) async {
+    final col = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('reminders');
+    final snap = await col
+        .where('plantName', isEqualTo: 'Solanum lycopersicum')
+        .get();
+    if (snap.docs.isEmpty) return;
+    final batch = _firestore.batch();
+    for (final doc in snap.docs) {
+      batch.update(doc.reference, {'plantName': 'Tomato'});
+    }
+    await batch.commit();
+  }
+
   /// One-shot fetch of the user's N most recent scans, ordered by timestamp
   /// descending. Used by the Plant AI chat to inject scan history context
   /// into each request.

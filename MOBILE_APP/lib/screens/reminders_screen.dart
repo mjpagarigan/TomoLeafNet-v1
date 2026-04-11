@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../models/reminder_model.dart';
 import '../models/scan_model.dart';
 import '../services/fcm_service.dart';
+import '../services/firestore_service.dart';
 import '../services/local_notification_service.dart';
 import '../services/reminder_service.dart';
 import '../services/reminders_backend.dart';
@@ -28,6 +29,14 @@ class _RemindersScreenState extends State<RemindersScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _migrateOldPlantNames();
+  }
+
+  void _migrateOldPlantNames() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      FirestoreService().migrateReminderPlantNameToTomato(uid);
+    }
   }
 
   @override
@@ -785,6 +794,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
   late ReminderRepeat _repeat;
   late DateTime _startDate;
   late TimeOfDay _notifyTime;
+  String? _timeValidationError;
 
   static const List<String> _waterOptions = ['1 cup', '2 cups', '500 ml', '1 L'];
 
@@ -792,12 +802,31 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
   void initState() {
     super.initState();
     final e = widget.existing;
-    _plantName = e?.plantName ?? 'Solanum lycopersicum';
+    _plantName = e?.plantName ?? 'Tomato';
     _plantImageUrl = e?.plantImageUrl;
     _waterAmount = e?.waterAmount ?? '1 cup';
     _repeat = e?.repeat ?? ReminderRepeat.every2Days;
     _startDate = e?.startDate ?? DateTime.now();
     _notifyTime = e?.notifyTime ?? const TimeOfDay(hour: 10, minute: 30);
+    _validateDateTime();
+  }
+
+  void _validateDateTime() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selectedDay = DateTime(_startDate.year, _startDate.month, _startDate.day);
+
+    if (selectedDay.isAtSameMomentAs(today)) {
+      final selectedTime = DateTime(
+        now.year, now.month, now.day,
+        _notifyTime.hour, _notifyTime.minute,
+      );
+      if (selectedTime.isBefore(now)) {
+        _timeValidationError = "Please choose a future time for today's reminder.";
+        return;
+      }
+    }
+    _timeValidationError = null;
   }
 
   @override
@@ -847,11 +876,13 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                       ),
                     ),
                     GestureDetector(
-                      onTap: _onSave,
+                      onTap: _timeValidationError == null ? _onSave : null,
                       child: Text(
                         'Done',
                         style: GoogleFonts.spaceGrotesk(
-                            color: accent, fontSize: 16, fontWeight: FontWeight.bold),
+                            color: _timeValidationError == null ? accent : Colors.grey,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
@@ -960,6 +991,27 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                           ),
                         ),
                       ),
+                      if (_timeValidationError != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error_outline,
+                                  color: Colors.redAccent, size: 16),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  _timeValidationError!,
+                                  style: GoogleFonts.spaceGrotesk(
+                                    fontSize: 12,
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       const SizedBox(height: 24),
                       if (widget.existing != null)
                         SizedBox(
@@ -1078,11 +1130,11 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
             ListTile(
               onTap: () => Navigator.pop(
                 ctx,
-                const _PickedPlant('Solanum lycopersicum', null),
+                const _PickedPlant('Tomato', null),
               ),
               leading: const Icon(Icons.local_florist, color: Color(0xFF309249)),
               title: Text(
-                'Solanum lycopersicum',
+                'Tomato',
                 style: GoogleFonts.spaceGrotesk(
                     color: isDark ? Colors.white : Colors.black87),
               ),
@@ -1216,13 +1268,21 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
   }
 
   Future<void> _pickStartDate() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final initial = _startDate.isBefore(today) ? today : _startDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _startDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      initialDate: initial,
+      firstDate: today,
       lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
-    if (picked != null) setState(() => _startDate = picked);
+    if (picked != null) {
+      setState(() {
+        _startDate = picked;
+        _validateDateTime();
+      });
+    }
   }
 
   Future<void> _pickNotifyTime() async {
@@ -1230,53 +1290,76 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
       context: context,
       initialTime: _notifyTime,
     );
-    if (picked != null) setState(() => _notifyTime = picked);
+    if (picked != null) {
+      setState(() {
+        _notifyTime = picked;
+        _validateDateTime();
+      });
+    }
   }
 
   Future<void> _onSave() async {
+    _validateDateTime();
+    if (_timeValidationError != null) {
+      setState(() {});
+      return;
+    }
+
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
     final fcmToken = await FcmService.instance.ensureToken();
 
     ReminderModel saved;
-    if (widget.existing == null) {
-      saved = await _service.createReminder(
-        uid: uid,
-        category: widget.category,
-        plantName: _plantName,
-        plantImageUrl: _plantImageUrl,
-        waterAmount: widget.category == ReminderCategory.watering
-            ? _waterAmount
-            : null,
-        repeat: _repeat,
-        startDate: _startDate,
-        notifyTime: _notifyTime,
-        fcmToken: fcmToken,
-      );
-      if (fcmToken != null) {
-        await RemindersBackend.instance
-            .schedule(uid: uid, fcmToken: fcmToken, reminder: saved);
+    try {
+      if (widget.existing == null) {
+        saved = await _service.createReminder(
+          uid: uid,
+          category: widget.category,
+          plantName: _plantName,
+          plantImageUrl: _plantImageUrl,
+          waterAmount: widget.category == ReminderCategory.watering
+              ? _waterAmount
+              : null,
+          repeat: _repeat,
+          startDate: _startDate,
+          notifyTime: _notifyTime,
+          fcmToken: fcmToken,
+        );
+        if (fcmToken != null) {
+          await RemindersBackend.instance
+              .schedule(uid: uid, fcmToken: fcmToken, reminder: saved);
+        }
+      } else {
+        saved = widget.existing!.copyWith(
+          plantName: _plantName,
+          plantImageUrl: _plantImageUrl,
+          waterAmount: widget.category == ReminderCategory.watering
+              ? _waterAmount
+              : null,
+          repeat: _repeat,
+          startDate: _startDate,
+          notifyTime: _notifyTime,
+          fcmToken: fcmToken,
+          isCompleted: false,
+          isExpired: false,
+        );
+        await _service.updateReminder(uid, saved);
+        if (fcmToken != null) {
+          await RemindersBackend.instance
+              .update(uid: uid, fcmToken: fcmToken, reminder: saved);
+        }
       }
-    } else {
-      saved = widget.existing!.copyWith(
-        plantName: _plantName,
-        plantImageUrl: _plantImageUrl,
-        waterAmount: widget.category == ReminderCategory.watering
-            ? _waterAmount
-            : null,
-        repeat: _repeat,
-        startDate: _startDate,
-        notifyTime: _notifyTime,
-        fcmToken: fcmToken,
-        isCompleted: false,
-        isExpired: false,
-      );
-      await _service.updateReminder(uid, saved);
-      if (fcmToken != null) {
-        await RemindersBackend.instance
-            .update(uid: uid, fcmToken: fcmToken, reminder: saved);
+    } on ReminderBackendException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message, style: GoogleFonts.spaceGrotesk()),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
       }
+      return;
     }
 
     await LocalNotificationService.instance.scheduleForReminder(saved);

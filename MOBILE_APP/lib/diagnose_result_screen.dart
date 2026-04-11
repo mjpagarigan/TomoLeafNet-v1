@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'models/scan_model.dart';
 import 'services/tflite_service.dart';
 import 'services/diagnose_service.dart';
 import 'services/firestore_service.dart';
@@ -11,12 +13,54 @@ import 'services/storage_service.dart';
 
 /// Diagnose Result Screen — disease detection + AI-generated treatment steps.
 ///
-/// Runs TFLite inference, then calls the Render backend /diagnose endpoint
-/// to get Groq-powered treatment instructions from Llama 3.1.
+/// Three modes:
+///   1. Live scan (imagePath) — runs TFLite + /diagnose pipeline and saves.
+///   2. History view (historyScan) — rehydrates from a Firestore scan document.
+///   3. Preloaded (label/confidence/steps) — shows pre-fetched results after
+///      upgrading from the Identify flow.
 class DiagnoseResultScreen extends StatefulWidget {
-  final String imagePath;
+  final String? imagePath;
+  final ScanModel? historyScan;
+  final String? preloadedLabel;
+  final double? preloadedConfidence;
+  final List<String>? preloadedSteps;
+  final String? preloadedLocalImagePath;
+  final String? preloadedRemoteImageUrl;
+  final bool upgradedFromIdentify;
 
-  const DiagnoseResultScreen({super.key, required this.imagePath});
+  const DiagnoseResultScreen({super.key, required this.imagePath})
+      : historyScan = null,
+        preloadedLabel = null,
+        preloadedConfidence = null,
+        preloadedSteps = null,
+        preloadedLocalImagePath = null,
+        preloadedRemoteImageUrl = null,
+        upgradedFromIdentify = false;
+
+  const DiagnoseResultScreen.history({super.key, required this.historyScan})
+      : imagePath = null,
+        preloadedLabel = null,
+        preloadedConfidence = null,
+        preloadedSteps = null,
+        preloadedLocalImagePath = null,
+        preloadedRemoteImageUrl = null,
+        upgradedFromIdentify = false;
+
+  DiagnoseResultScreen.preloaded({
+    super.key,
+    required String label,
+    required double confidence,
+    required List<String> treatmentSteps,
+    String? localImagePath,
+    String? remoteImageUrl,
+    this.upgradedFromIdentify = false,
+  })  : imagePath = null,
+        historyScan = null,
+        preloadedLabel = label,
+        preloadedConfidence = confidence,
+        preloadedSteps = treatmentSteps,
+        preloadedLocalImagePath = localImagePath,
+        preloadedRemoteImageUrl = remoteImageUrl;
 
   @override
   State<DiagnoseResultScreen> createState() => _DiagnoseResultScreenState();
@@ -29,22 +73,22 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
   final _firestoreService = FirestoreService();
   final _storageService = StorageService();
 
-  // Inference state
   bool _isDetecting = true;
   TFLiteResult? _result;
   String _errorMessage = "";
 
-  // Treatment state
   bool _isLoadingTreatment = false;
   List<String>? _treatmentSteps;
   String _treatmentError = "";
 
-  // Firebase save state
   bool _isSaving = false;
   bool _isSaved = false;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
+
+  bool get _isHistory => widget.historyScan != null;
+  bool get _isPreloaded => widget.preloadedLabel != null;
 
   @override
   void initState() {
@@ -57,7 +101,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       parent: _fadeController,
       curve: Curves.easeOut,
     );
-    _runPipeline();
+
+    if (_isHistory) {
+      _hydrateFromHistory();
+    } else if (_isPreloaded) {
+      _hydrateFromPreloaded();
+    } else {
+      _runPipeline();
+    }
   }
 
   @override
@@ -67,11 +118,35 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     super.dispose();
   }
 
+  void _hydrateFromHistory() {
+    final scan = widget.historyScan!;
+    _result = TFLiteResult(
+      label: scan.predictedDisease,
+      index: 0,
+      confidence: scan.confidenceScore,
+    );
+    _treatmentSteps = scan.treatmentSteps;
+    _isDetecting = false;
+    _isSaved = true;
+    _fadeController.forward();
+  }
+
+  void _hydrateFromPreloaded() {
+    _result = TFLiteResult(
+      label: widget.preloadedLabel!,
+      index: 0,
+      confidence: widget.preloadedConfidence!,
+    );
+    _treatmentSteps = widget.preloadedSteps;
+    _isDetecting = false;
+    _isSaved = true;
+    _fadeController.forward();
+  }
+
   /// Full pipeline: TFLite inference → Groq treatment steps → Firestore save
   Future<void> _runPipeline() async {
     try {
-      // Step 1: TFLite inference
-      final result = await _tfliteService.predict(widget.imagePath);
+      final result = await _tfliteService.predict(widget.imagePath!);
       if (!mounted) return;
 
       setState(() {
@@ -81,7 +156,6 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       });
       _fadeController.forward();
 
-      // Step 2: Get treatment steps from Groq via Render backend
       try {
         final steps = await _diagnoseService.getTreatmentSteps(
           disease: result.label,
@@ -104,7 +178,6 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         }
       }
 
-      // Step 3: Save to Firebase
       _saveScanToFirebase();
     } catch (e, stackTrace) {
       print("Error running model: $e\n$stackTrace");
@@ -150,7 +223,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       final imageUrl = await _storageService.uploadScanImage(
         uid: user.uid,
         scanId: scanId,
-        localImagePath: widget.imagePath,
+        localImagePath: widget.imagePath!,
       );
 
       await _firestoreService.updateScanImageUrl(user.uid, scanId, imageUrl);
@@ -177,6 +250,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -214,38 +288,34 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             Stack(
               alignment: Alignment.topCenter,
               children: [
-                Container(
+                SizedBox(
                   width: double.infinity,
                   height: 350,
-                  decoration: BoxDecoration(
-                    image: DecorationImage(
-                      image: FileImage(File(widget.imagePath)),
-                      fit: BoxFit.cover,
+                  child: _buildHeroImage(isDark),
+                ),
+                if (_isDetecting)
+                  Container(
+                    width: double.infinity,
+                    height: 350,
+                    color: Colors.black54,
+                    alignment: Alignment.center,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const CircularProgressIndicator(
+                          color: Color(0xFF4CAF50),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          "Diagnosing...",
+                          style: GoogleFonts.spaceGrotesk(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  child: _isDetecting
-                      ? Container(
-                          color: Colors.black54,
-                          alignment: Alignment.center,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const CircularProgressIndicator(
-                                color: Color(0xFF4CAF50),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                "Diagnosing...",
-                                style: GoogleFonts.spaceGrotesk(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : null,
-                ),
                 // Status Badge
                 if (!_isDetecting && _result != null)
                   Positioned(
@@ -332,13 +402,46 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       ),
                     ),
 
+                    // ── Upgraded from Identify note ──
+                    if (widget.upgradedFromIdentify)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF309249).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF309249).withOpacity(0.2),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.info_outline,
+                                  color: Color(0xFF309249), size: 18),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  "Identified via Identify, diagnosed via AI",
+                                  style: GoogleFonts.spaceGrotesk(
+                                    fontSize: 13,
+                                    color: const Color(0xFF309249),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
                     // ── How to Treat Section ──
                     Padding(
                       padding: const EdgeInsets.all(24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Section header
                           Row(
                             children: [
                               Icon(
@@ -485,13 +588,74 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     );
   }
 
+  Widget _buildHeroImage(bool isDark) {
+    if (_isHistory) {
+      final url = widget.historyScan!.imageUrl;
+      if (url != null && url.isNotEmpty) {
+        return CachedNetworkImage(
+          imageUrl: url,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => Container(
+            color: isDark ? Colors.grey[900] : Colors.grey[200],
+            alignment: Alignment.center,
+            child: const CircularProgressIndicator(color: Color(0xFF309249)),
+          ),
+          errorWidget: (_, __, ___) => Container(
+            color: isDark ? Colors.grey[900] : Colors.grey[200],
+            alignment: Alignment.center,
+            child: Icon(Icons.broken_image,
+                size: 64, color: Colors.grey[500]),
+          ),
+        );
+      }
+      return Container(
+        color: isDark ? Colors.grey[900] : Colors.grey[200],
+        alignment: Alignment.center,
+        child: Icon(Icons.eco, size: 64, color: Colors.grey[500]),
+      );
+    }
+
+    if (_isPreloaded) {
+      if (widget.preloadedLocalImagePath != null) {
+        return Image.file(
+          File(widget.preloadedLocalImagePath!),
+          fit: BoxFit.cover,
+        );
+      }
+      if (widget.preloadedRemoteImageUrl != null) {
+        return CachedNetworkImage(
+          imageUrl: widget.preloadedRemoteImageUrl!,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => Container(
+            color: isDark ? Colors.grey[900] : Colors.grey[200],
+            alignment: Alignment.center,
+            child: const CircularProgressIndicator(color: Color(0xFF309249)),
+          ),
+          errorWidget: (_, __, ___) => Container(
+            color: isDark ? Colors.grey[900] : Colors.grey[200],
+            alignment: Alignment.center,
+            child: Icon(Icons.broken_image,
+                size: 64, color: Colors.grey[500]),
+          ),
+        );
+      }
+      return Container(
+        color: isDark ? Colors.grey[900] : Colors.grey[200],
+        alignment: Alignment.center,
+        child: Icon(Icons.eco, size: 64, color: Colors.grey[500]),
+      );
+    }
+
+    // Live scan: local file
+    return Image.file(File(widget.imagePath!), fit: BoxFit.cover);
+  }
+
   Widget _buildTreatmentStep(
     int number,
     String step,
     bool isDark, {
     bool isLast = false,
   }) {
-    // Strip leading number prefix if present (e.g., "1. Remove...")
     String cleanStep = step.replaceFirst(RegExp(r'^\d+[\.\)]\s*'), '');
 
     return Padding(
@@ -499,7 +663,6 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Step number circle
           Container(
             width: 32,
             height: 32,
@@ -518,7 +681,6 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             ),
           ),
           const SizedBox(width: 14),
-          // Step text
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(top: 5),

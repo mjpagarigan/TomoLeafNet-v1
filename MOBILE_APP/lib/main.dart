@@ -89,7 +89,7 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
   late final List<Widget> _screens = [
-    HomeScreen(onNavigateToRecentScans: () => setState(() => _currentIndex = 2)),
+    const HomeScreen(),
     const ChatScreen(),
     const HistoryScreen(),
     const MoreScreen(),
