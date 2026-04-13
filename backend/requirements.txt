@@ -6,7 +6,4 @@ apscheduler
 firebase-admin
 numpy
 Pillow
-# tensorflow — required for /gradcam endpoint only.
-# Uncomment if deploying on a server with enough RAM (1GB+).
-# Not compatible with Render free tier (512 MB).
-# tensorflow
+tensorflow
