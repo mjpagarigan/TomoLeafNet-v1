@@ -1,14 +1,14 @@
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import 'identify_result_screen.dart';
 import 'diagnose_result_screen.dart';
 import 'main.dart'; // To access global 'cameras' list
 
 class CameraScreen extends StatefulWidget {
-  /// The scan type determines which result screen to navigate to.
-  /// Must be "identify" or "diagnose".
   final String scanType;
 
   const CameraScreen({super.key, required this.scanType});
@@ -21,6 +21,7 @@ class _CameraScreenState extends State<CameraScreen> {
   CameraController? _controller;
   bool _isCameraInitialized = false;
   FlashMode _flashMode = FlashMode.off;
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -33,7 +34,6 @@ class _CameraScreenState extends State<CameraScreen> {
       print("No cameras found");
       return;
     }
-    // Select the first back camera
     final camera = cameras.firstWhere(
         (camera) => camera.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first);
@@ -105,7 +105,50 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  /// Navigate to the appropriate result screen based on scanType.
+  /// Crop an image file to a square centered region, then navigate to result.
+  Future<void> _cropAndNavigate(String imagePath) async {
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
+
+    try {
+      final bytes = await File(imagePath).readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) {
+        _navigateToResult(imagePath);
+        return;
+      }
+
+      final int minDim = decoded.width < decoded.height
+          ? decoded.width
+          : decoded.height;
+      final int cropX = (decoded.width - minDim) ~/ 2;
+      final int cropY = (decoded.height - minDim) ~/ 2;
+
+      final cropped = img.copyCrop(
+        decoded,
+        x: cropX,
+        y: cropY,
+        width: minDim,
+        height: minDim,
+      );
+
+      final croppedPath = imagePath.replaceAll('.jpg', '_cropped.jpg');
+      final croppedFile = File(croppedPath);
+      await croppedFile.writeAsBytes(img.encodeJpg(cropped, quality: 90));
+
+      if (mounted) {
+        _navigateToResult(croppedPath);
+      }
+    } catch (e) {
+      print("Crop error: $e, falling back to original");
+      if (mounted) {
+        _navigateToResult(imagePath);
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
   void _navigateToResult(String imagePath) {
     final Widget resultScreen;
     if (widget.scanType == 'diagnose') {
@@ -122,12 +165,13 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> _takePicture() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
+    if (_isProcessing) return;
 
     try {
       await _controller!.setFlashMode(_flashMode);
       final image = await _controller!.takePicture();
       if (mounted) {
-        _navigateToResult(image.path);
+        _cropAndNavigate(image.path);
       }
     } catch (e) {
       print("Error taking picture: $e");
@@ -135,10 +179,11 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   Future<void> _pickFromGallery() async {
+    if (_isProcessing) return;
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null && mounted) {
-      _navigateToResult(pickedFile.path);
+      _cropAndNavigate(pickedFile.path);
     }
   }
 
@@ -151,7 +196,6 @@ class _CameraScreenState extends State<CameraScreen> {
       );
     }
 
-    // Show which mode is active
     final isIdentify = widget.scanType == 'identify';
     final modeColor = isIdentify ? const Color(0xFF4CAF50) : const Color(0xFF78909C);
     final modeLabel = isIdentify ? "Identify Mode" : "Diagnose Mode";
@@ -167,13 +211,33 @@ class _CameraScreenState extends State<CameraScreen> {
             child: CameraPreview(_controller!),
           ),
 
-          // 2. Overlay (Scanner Frame)
+          // 2. Square viewfinder overlay with dark edges (Improvement 7)
           CustomPaint(
             size: Size.infinite,
-            painter: ScannerOverlayPainter(),
+            painter: SquareViewfinderPainter(),
           ),
 
-          // 3. UI Controls
+          // 3. Processing overlay
+          if (_isProcessing)
+            Container(
+              color: Colors.black54,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Color(0xFF4CAF50)),
+                    const SizedBox(height: 16),
+                    Text(
+                      "Processing...",
+                      style: GoogleFonts.spaceGrotesk(
+                          color: Colors.white, fontSize: 16),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 4. UI Controls
           SafeArea(
             child: Column(
               children: [
@@ -187,7 +251,6 @@ class _CameraScreenState extends State<CameraScreen> {
                         icon: const Icon(Icons.close, color: Colors.white, size: 30),
                         onPressed: () => Navigator.pop(context),
                       ),
-                      // Mode indicator badge
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                         decoration: BoxDecoration(
@@ -219,7 +282,7 @@ class _CameraScreenState extends State<CameraScreen> {
                     ],
                   ),
                 ),
-                
+
                 const Spacer(),
 
                 // Tip Box
@@ -243,14 +306,14 @@ class _CameraScreenState extends State<CameraScreen> {
                        const SizedBox(width: 15),
                        Expanded(
                          child: Text(
-                           "Ensure the plant is in focus and well lighted",
+                           "Position the tomato leaf inside the box",
                            style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 13),
                          ),
                        )
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 30),
 
                 // Bottom Controls
@@ -259,7 +322,6 @@ class _CameraScreenState extends State<CameraScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      // Gallery Button
                       GestureDetector(
                         onTap: _pickFromGallery,
                         child: Container(
@@ -272,7 +334,6 @@ class _CameraScreenState extends State<CameraScreen> {
                         ),
                       ),
 
-                      // Shutter Button
                       GestureDetector(
                         onTap: _takePicture,
                         child: Container(
@@ -293,7 +354,6 @@ class _CameraScreenState extends State<CameraScreen> {
                         ),
                       ),
 
-                       // Flash/Torch Button
                       IconButton(
                         icon: Icon(_getFlashIcon(), color: Colors.white),
                         onPressed: _toggleFlash,
@@ -310,44 +370,71 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 }
 
-class ScannerOverlayPainter extends CustomPainter {
+/// Custom painter that draws a centered square viewfinder with a dark
+/// semi-transparent overlay outside the box and green rounded corners.
+class SquareViewfinderPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 3.0
-      ..style = PaintingStyle.stroke;
+    // Calculate the centered square box (80% of screen width)
+    final double boxSize = size.width * 0.80;
+    final double left = (size.width - boxSize) / 2;
+    final double top = (size.height - boxSize) / 2 - 40;
+    final Rect boxRect = Rect.fromLTWH(left, top, boxSize, boxSize);
 
-    final double cornerLength = 50.0;
-    final double margin = 40.0;
-    
-    // Calculate the scanning box (centered square)
-    final double boxSize = size.width - (margin * 2);
-    final double topOffset = (size.height - boxSize) / 2 - 50;
+    // Draw the dark overlay outside the box
+    final overlayPaint = Paint()
+      ..color = Colors.black.withOpacity(0.60)
+      ..style = PaintingStyle.fill;
 
-    final Path path = Path();
+    // Create a path covering everything except the box
+    final overlayPath = Path()
+      ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..addRRect(RRect.fromRectAndRadius(boxRect, const Radius.circular(16)))
+      ..fillType = PathFillType.evenOdd;
+
+    canvas.drawPath(overlayPath, overlayPaint);
+
+    // Draw the green rounded corner brackets
+    final cornerPaint = Paint()
+      ..color = const Color(0xFF4CAF50)
+      ..strokeWidth = 4.0
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final double cornerLength = 40.0;
+    final double r = 16.0; // corner radius
 
     // Top Left
-    path.moveTo(margin, topOffset + cornerLength);
-    path.lineTo(margin, topOffset);
-    path.lineTo(margin + cornerLength, topOffset);
+    final topLeftPath = Path()
+      ..moveTo(left, top + cornerLength)
+      ..lineTo(left, top + r)
+      ..quadraticBezierTo(left, top, left + r, top)
+      ..lineTo(left + cornerLength, top);
+    canvas.drawPath(topLeftPath, cornerPaint);
 
     // Top Right
-    path.moveTo(size.width - margin - cornerLength, topOffset);
-    path.lineTo(size.width - margin, topOffset);
-    path.lineTo(size.width - margin, topOffset + cornerLength);
+    final topRightPath = Path()
+      ..moveTo(left + boxSize - cornerLength, top)
+      ..lineTo(left + boxSize - r, top)
+      ..quadraticBezierTo(left + boxSize, top, left + boxSize, top + r)
+      ..lineTo(left + boxSize, top + cornerLength);
+    canvas.drawPath(topRightPath, cornerPaint);
 
     // Bottom Right
-    path.moveTo(size.width - margin, topOffset + boxSize - cornerLength);
-    path.lineTo(size.width - margin, topOffset + boxSize);
-    path.lineTo(size.width - margin - cornerLength, topOffset + boxSize);
+    final bottomRightPath = Path()
+      ..moveTo(left + boxSize, top + boxSize - cornerLength)
+      ..lineTo(left + boxSize, top + boxSize - r)
+      ..quadraticBezierTo(left + boxSize, top + boxSize, left + boxSize - r, top + boxSize)
+      ..lineTo(left + boxSize - cornerLength, top + boxSize);
+    canvas.drawPath(bottomRightPath, cornerPaint);
 
     // Bottom Left
-    path.moveTo(margin + cornerLength, topOffset + boxSize);
-    path.lineTo(margin, topOffset + boxSize);
-    path.lineTo(margin, topOffset + boxSize - cornerLength);
-    
-    canvas.drawPath(path, paint);
+    final bottomLeftPath = Path()
+      ..moveTo(left + cornerLength, top + boxSize)
+      ..lineTo(left + r, top + boxSize)
+      ..quadraticBezierTo(left, top + boxSize, left, top + boxSize - r)
+      ..lineTo(left, top + boxSize - cornerLength);
+    canvas.drawPath(bottomLeftPath, cornerPaint);
   }
 
   @override

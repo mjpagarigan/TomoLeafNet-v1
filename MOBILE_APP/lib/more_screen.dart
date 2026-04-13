@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme_provider.dart';
 import 'services/auth_service.dart';
+import 'widgets/onboarding_tutorial.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -35,7 +36,6 @@ class MoreScreen extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   child: Row(
                     children: [
-                      // Profile avatar
                       CircleAvatar(
                         radius: 28,
                         backgroundColor: const Color(0xFF309249).withAlpha(40),
@@ -98,6 +98,36 @@ class MoreScreen extends StatelessWidget {
 
           const SizedBox(height: 28),
 
+          // --- General Section (Tutorial) ---
+          _buildSectionHeader('General', theme),
+          const SizedBox(height: 12),
+          _buildSettingsCard(
+            theme: theme,
+            isDark: isDark,
+            children: [
+              ListTile(
+                leading: Icon(Icons.school_outlined,
+                    color: const Color(0xFF309249), size: 24),
+                title: Text('Show Tutorial Again',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurface,
+                    )),
+                subtitle: Text('Replay the app walkthrough',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurface.withAlpha(120),
+                    )),
+                trailing: Icon(Icons.chevron_right,
+                    color: theme.colorScheme.onSurface.withAlpha(100)),
+                onTap: () => OnboardingTutorial.showTutorial(context),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 28),
+
           // --- About Section ---
           _buildSectionHeader('About', theme),
           const SizedBox(height: 12),
@@ -109,7 +139,7 @@ class MoreScreen extends StatelessWidget {
               Divider(color: theme.colorScheme.onSurface.withAlpha(20), height: 1),
               _buildInfoRow(theme, 'Version', '1.0.0'),
               Divider(color: theme.colorScheme.onSurface.withAlpha(20), height: 1),
-              _buildInfoRow(theme, 'Model', 'TomoLeafNet v3 Hybrid'),
+              _buildInfoRow(theme, 'Model', 'TomoLeafNet v4 MobileNetV3'),
               Divider(color: theme.colorScheme.onSurface.withAlpha(20), height: 1),
               _buildInfoRow(theme, 'Classes', '5 tomato leaf conditions'),
             ],
@@ -145,7 +175,6 @@ class MoreScreen extends StatelessWidget {
             ),
           ],
 
-          // Extra padding for bottom nav bar
           const SizedBox(height: 100),
         ],
       ),
@@ -173,7 +202,6 @@ class MoreScreen extends StatelessWidget {
 
     if (confirmed == true) {
       await AuthService().signOut();
-      // AuthWrapper will automatically redirect to LoginScreen
     }
   }
 

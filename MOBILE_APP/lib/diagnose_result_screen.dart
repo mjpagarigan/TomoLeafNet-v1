@@ -1,15 +1,20 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'models/scan_model.dart';
 import 'services/tflite_service.dart';
 import 'services/diagnose_service.dart';
 import 'services/firestore_service.dart';
 import 'services/storage_service.dart';
+import 'widgets/disease_carousel.dart';
+import 'core/config/app_config.dart';
 
 /// Diagnose Result Screen — disease detection + AI-generated treatment steps.
 ///
@@ -84,6 +89,20 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
   bool _isSaving = false;
   bool _isSaved = false;
 
+  // Low confidence flow (Improvement 8)
+  bool _showLowConfidenceWarning = false;
+  bool _continuedAnyway = false;
+
+  // GradCAM state (Improvement 4)
+  bool _showGradCam = false;
+  bool _isLoadingGradCam = false;
+  String? _gradCamImageBase64;
+
+  // Translation state (Improvement 3)
+  bool _isFilipino = false;
+  bool _isTranslating = false;
+  final Map<String, String> _translations = {};
+
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
@@ -102,6 +121,8 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       curve: Curves.easeOut,
     );
 
+    _loadLanguagePreference();
+
     if (_isHistory) {
       _hydrateFromHistory();
     } else if (_isPreloaded) {
@@ -118,6 +139,15 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     super.dispose();
   }
 
+  Future<void> _loadLanguagePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _isFilipino = prefs.getBool('preferFilipino') ?? false;
+      });
+    }
+  }
+
   void _hydrateFromHistory() {
     final scan = widget.historyScan!;
     _result = TFLiteResult(
@@ -128,6 +158,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     _treatmentSteps = scan.treatmentSteps;
     _isDetecting = false;
     _isSaved = true;
+    _continuedAnyway = true;
     _fadeController.forward();
   }
 
@@ -140,10 +171,11 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     _treatmentSteps = widget.preloadedSteps;
     _isDetecting = false;
     _isSaved = true;
+    _continuedAnyway = true;
     _fadeController.forward();
   }
 
-  /// Full pipeline: TFLite inference → Groq treatment steps → Firestore save
+  /// Full pipeline: TFLite inference -> Groq treatment steps -> Firestore save
   Future<void> _runPipeline() async {
     try {
       final result = await _tfliteService.predict(widget.imagePath!);
@@ -152,32 +184,28 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       setState(() {
         _result = result;
         _isDetecting = false;
-        _isLoadingTreatment = true;
       });
       _fadeController.forward();
 
-      try {
-        final steps = await _diagnoseService.getTreatmentSteps(
-          disease: result.label,
-          confidence: double.parse(
-              (result.confidence * 100).toStringAsFixed(1)),
-        );
-        if (mounted) {
-          setState(() {
-            _treatmentSteps = steps;
-            _isLoadingTreatment = false;
-          });
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-            _treatmentError =
-                "Treatment advice unavailable. Please check your connection and try again.";
-            _isLoadingTreatment = false;
-          });
-        }
+      // Improvement 9: Not Tomato — don't proceed
+      if (result.label == 'Not_Tomato') {
+        return;
       }
 
+      // Improvement 8: Low confidence (<60%)
+      if (result.confidence < 0.60) {
+        setState(() => _showLowConfidenceWarning = true);
+        return;
+      }
+
+      // Improvement 6: Healthy — show care tips, no treatment
+      if (result.label == 'Healthy') {
+        _saveScanToFirebase();
+        return;
+      }
+
+      setState(() => _isLoadingTreatment = true);
+      await _fetchTreatment(result);
       _saveScanToFirebase();
     } catch (e, stackTrace) {
       print("Error running model: $e\n$stackTrace");
@@ -188,6 +216,47 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         });
       }
     }
+  }
+
+  Future<void> _fetchTreatment(TFLiteResult result) async {
+    try {
+      final steps = await _diagnoseService.getTreatmentSteps(
+        disease: result.label,
+        confidence: double.parse(
+            (result.confidence * 100).toStringAsFixed(1)),
+      );
+      if (mounted) {
+        setState(() {
+          _treatmentSteps = steps;
+          _isLoadingTreatment = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _treatmentError =
+              "Treatment advice unavailable. Please check your connection and try again.";
+          _isLoadingTreatment = false;
+        });
+      }
+    }
+  }
+
+  void _onContinueAnyway() {
+    setState(() {
+      _showLowConfidenceWarning = false;
+      _continuedAnyway = true;
+    });
+
+    if (_result != null && _result!.label != 'Healthy') {
+      setState(() => _isLoadingTreatment = true);
+      _fetchTreatment(_result!);
+    }
+    _saveScanToFirebase();
+  }
+
+  void _onRetakePhoto() {
+    Navigator.pop(context);
   }
 
   Future<void> _saveScanToFirebase() async {
@@ -236,12 +305,153 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     }
   }
 
+  // ── GradCAM ──
+  Future<void> _toggleGradCam() async {
+    if (_showGradCam) {
+      setState(() => _showGradCam = false);
+      return;
+    }
+    if (_gradCamImageBase64 != null) {
+      setState(() => _showGradCam = true);
+      return;
+    }
+
+    // Find the image to send
+    String? imagePath = widget.imagePath ?? widget.preloadedLocalImagePath;
+    if (imagePath == null) {
+      setState(() => _isLoadingGradCam = false);
+      return;
+    }
+
+    setState(() => _isLoadingGradCam = true);
+    try {
+      final imageBytes = await File(imagePath).readAsBytes();
+      final response = await http.post(
+        Uri.parse(AppConfig.gradcamUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'image_base64': base64Encode(imageBytes),
+          'predicted_class_index': _result!.index,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (mounted) {
+          setState(() {
+            _gradCamImageBase64 = data['gradcam_image_base64'];
+            _showGradCam = true;
+            _isLoadingGradCam = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _isLoadingGradCam = false);
+      }
+    } catch (e) {
+      print('GradCAM error: $e');
+      if (mounted) setState(() => _isLoadingGradCam = false);
+    }
+  }
+
+  // ── Translation ──
+  Future<void> _toggleLanguage() async {
+    final newValue = !_isFilipino;
+    setState(() => _isFilipino = newValue);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('preferFilipino', newValue);
+
+    if (newValue && _result != null) {
+      await _translateContent();
+    }
+  }
+
+  Future<void> _translateContent() async {
+    if (_result == null) return;
+
+    final textsToTranslate = <String>[
+      _result!.displayName,
+      _result!.confidenceLabel,
+      'How to Treat',
+      'Identified via Identify, diagnosed via AI',
+      'Great news! No treatment needed.',
+      'Your plant looks healthy. Here are some tips to keep it that way:',
+      ..._treatmentSteps ?? [],
+    ];
+
+    final prefs = await SharedPreferences.getInstance();
+    final uncached = <String>[];
+    for (final text in textsToTranslate) {
+      final cached = prefs.getString('translate_$text');
+      if (cached != null) {
+        _translations[text] = cached;
+      } else {
+        uncached.add(text);
+      }
+    }
+
+    if (uncached.isEmpty) {
+      if (mounted) setState(() {});
+      return;
+    }
+
+    setState(() => _isTranslating = true);
+
+    try {
+      final response = await http.post(
+        Uri.parse(AppConfig.translateUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'texts': uncached,
+          'target_language': 'tl',
+        }),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final translated = List<String>.from(data['translations'] ?? []);
+        for (int i = 0; i < uncached.length && i < translated.length; i++) {
+          _translations[uncached[i]] = translated[i];
+          await prefs.setString('translate_${uncached[i]}', translated[i]);
+        }
+      }
+    } catch (e) {
+      print('Translation error: $e');
+    }
+
+    if (mounted) setState(() => _isTranslating = false);
+  }
+
+  String _t(String text) {
+    if (!_isFilipino) return text;
+    return _translations[text] ?? text;
+  }
+
+  // Healthy care tips
+  static const _healthyCareTips = [
+    'Water your tomato plants deeply but infrequently, keeping the soil consistently moist.',
+    'Ensure your plants get 6-8 hours of sunlight daily for optimal growth.',
+    'Apply balanced fertilizer every 2-3 weeks during the growing season.',
+    'Prune suckers regularly to improve airflow and prevent disease.',
+    'Monitor for pests like aphids and whiteflies — early detection is key.',
+  ];
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
     final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+
+    // Improvement 9: Not Tomato retake screen
+    if (!_isDetecting && _result != null && _result!.label == 'Not_Tomato' &&
+        !_isHistory && !_isPreloaded) {
+      return _buildNotTomatoScreen(isDark);
+    }
+
+    // Improvement 8: Low confidence retake
+    if (_showLowConfidenceWarning && !_continuedAnyway) {
+      return _buildLowConfidenceScreen(isDark);
+    }
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -259,6 +469,29 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         ),
         centerTitle: true,
         actions: [
+          // Translation toggle
+          if (!_isDetecting && _result != null && _result!.label != 'Not_Tomato')
+            TextButton(
+              onPressed: _toggleLanguage,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF309249).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: const Color(0xFF309249).withOpacity(0.3),
+                  ),
+                ),
+                child: Text(
+                  _isFilipino ? "FIL" : "EN",
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF309249),
+                  ),
+                ),
+              ),
+            ),
           if (_isSaving)
             const Padding(
               padding: EdgeInsets.only(right: 16),
@@ -284,6 +517,41 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Low confidence warning banner
+            if (_continuedAnyway && _result != null && _result!.confidence < 0.60)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                color: const Color(0xFFF44336).withOpacity(0.15),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        color: Color(0xFFF44336), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _isFilipino
+                            ? "Mababang kumpiyansa - maaaring hindi tumpak ang diagnosis na ito"
+                            : "Low confidence result \u2014 this diagnosis may not be accurate",
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 12,
+                          color: const Color(0xFFF44336),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Translation loading
+            if (_isTranslating)
+              const LinearProgressIndicator(
+                color: Color(0xFF309249),
+                backgroundColor: Colors.transparent,
+                minHeight: 2,
+              ),
+
             // ── Hero Image ──
             Stack(
               alignment: Alignment.topCenter,
@@ -291,7 +559,12 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 SizedBox(
                   width: double.infinity,
                   height: 350,
-                  child: _buildHeroImage(isDark),
+                  child: _showGradCam && _gradCamImageBase64 != null
+                      ? Image.memory(
+                          base64Decode(_gradCamImageBase64!),
+                          fit: BoxFit.cover,
+                        )
+                      : _buildHeroImage(isDark),
                 ),
                 if (_isDetecting)
                   Container(
@@ -314,6 +587,40 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                // GradCAM loading overlay
+                if (_isLoadingGradCam)
+                  Container(
+                    width: double.infinity,
+                    height: 350,
+                    color: Colors.black38,
+                    alignment: Alignment.center,
+                    child: const CircularProgressIndicator(
+                      color: Color(0xFF4CAF50),
+                    ),
+                  ),
+                // GradCAM toggle button
+                if (!_isDetecting && _result != null &&
+                    (widget.imagePath != null || widget.preloadedLocalImagePath != null) &&
+                    _result!.label != 'Healthy')
+                  Positioned(
+                    top: 20,
+                    right: 16,
+                    child: GestureDetector(
+                      onTap: _toggleGradCam,
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _showGradCam ? Icons.visibility_off : Icons.visibility,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
                     ),
                   ),
                 // Status Badge
@@ -355,6 +662,24 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
               ],
             ),
 
+            // GradCAM label
+            if (_showGradCam && _gradCamImageBase64 != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFFFF3E0),
+                child: Text(
+                  _isFilipino
+                      ? "Ang mga lugar na naka-highlight sa pula ay kung saan nakatuon ang modelo"
+                      : "Areas highlighted in red indicate where the model focused",
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 12,
+                    color: isDark ? Colors.orange[200] : Colors.orange[800],
+                  ),
+                ),
+              ),
+
             // ── Error State ──
             if (_errorMessage.isNotEmpty)
               Padding(
@@ -390,7 +715,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            "${_result!.confidenceLabel}  •  ${_result!.confidencePercent}",
+                            "${_t(_result!.confidenceLabel)}  \u2022  ${_result!.confidencePercent}",
                             style: GoogleFonts.spaceGrotesk(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -402,7 +727,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       ),
                     ),
 
-                    // ── Upgraded from Identify note ──
+                    // Upgraded from Identify note
                     if (widget.upgradedFromIdentify)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
@@ -423,7 +748,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  "Identified via Identify, diagnosed via AI",
+                                  _t("Identified via Identify, diagnosed via AI"),
                                   style: GoogleFonts.spaceGrotesk(
                                     fontSize: 13,
                                     color: const Color(0xFF309249),
@@ -436,44 +761,22 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                         ),
                       ),
 
-                    // ── How to Treat Section ──
-                    Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.healing,
-                                color: const Color(0xFF309249),
-                                size: 24,
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                "How to Treat",
-                                style: GoogleFonts.spaceGrotesk(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Loading state
-                          if (_isLoadingTreatment)
+                    // ── Healthy: Care tips instead of treatment (Improvement 6) ──
+                    if (_result!.label == 'Healthy')
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.all(32),
+                              padding: const EdgeInsets.all(24),
                               decoration: BoxDecoration(
                                 color: cardColor,
                                 borderRadius: BorderRadius.circular(20),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black
-                                        .withOpacity(isDark ? 0.4 : 0.08),
+                                    color: Colors.black.withOpacity(isDark ? 0.4 : 0.08),
                                     blurRadius: 20,
                                     offset: const Offset(0, 8),
                                   ),
@@ -481,109 +784,454 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                               ),
                               child: Column(
                                 children: [
-                                  const SizedBox(
-                                    width: 32,
-                                    height: 32,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 3,
-                                      color: Color(0xFF309249),
+                                  const Icon(Icons.eco,
+                                      color: Color(0xFF4CAF50), size: 48),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _t("Great news! No treatment needed."),
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFF4CAF50),
                                     ),
                                   ),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 8),
                                   Text(
-                                    "Analyzing treatment...",
+                                    _t("Your plant looks healthy. Here are some tips to keep it that way:"),
+                                    textAlign: TextAlign.center,
                                     style: GoogleFonts.spaceGrotesk(
-                                      fontSize: 15,
-                                      color: isDark
-                                          ? Colors.grey[400]
-                                          : Colors.grey[600],
+                                      fontSize: 14,
+                                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  ...List.generate(
+                                    _healthyCareTips.length,
+                                    (i) => _buildTreatmentStep(
+                                      i + 1,
+                                      _healthyCareTips[i],
+                                      isDark,
+                                      isLast: i == _healthyCareTips.length - 1,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
+                          ],
+                        ),
+                      ),
 
-                          // Error state
-                          if (_treatmentError.isNotEmpty &&
-                              !_isLoadingTreatment)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF44336)
-                                    .withOpacity(0.08),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: const Color(0xFFF44336)
-                                      .withOpacity(0.2),
+                    // ── How to Treat Section (disease detected) ──
+                    if (_result!.label != 'Healthy' && _result!.label != 'Not_Tomato')
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.healing,
+                                  color: const Color(0xFF309249),
+                                  size: 24,
                                 ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.wifi_off,
-                                    color: Color(0xFFF44336),
-                                    size: 24,
+                                const SizedBox(width: 10),
+                                Text(
+                                  _t("How to Treat"),
+                                  style: GoogleFonts.spaceGrotesk(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : Colors.black87,
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      _treatmentError,
-                                      style: GoogleFonts.spaceGrotesk(
-                                        fontSize: 14,
-                                        color: isDark
-                                            ? Colors.red[300]
-                                            : const Color(0xFFF44336),
-                                        height: 1.4,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Loading state
+                            if (_isLoadingTreatment)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(32),
+                                decoration: BoxDecoration(
+                                  color: cardColor,
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black
+                                          .withOpacity(isDark ? 0.4 : 0.08),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  children: [
+                                    const SizedBox(
+                                      width: 32,
+                                      height: 32,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 3,
+                                        color: Color(0xFF309249),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      "Analyzing treatment...",
+                                      style: GoogleFonts.spaceGrotesk(
+                                        fontSize: 15,
+                                        color: isDark
+                                            ? Colors.grey[400]
+                                            : Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
 
-                          // Treatment steps
-                          if (_treatmentSteps != null &&
-                              _treatmentSteps!.isNotEmpty &&
-                              !_isLoadingTreatment)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: cardColor,
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black
-                                        .withOpacity(isDark ? 0.4 : 0.08),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 8),
+                            // Error state
+                            if (_treatmentError.isNotEmpty &&
+                                !_isLoadingTreatment)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF44336)
+                                      .withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: const Color(0xFFF44336)
+                                        .withOpacity(0.2),
                                   ),
-                                ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.wifi_off,
+                                      color: Color(0xFFF44336),
+                                      size: 24,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _treatmentError,
+                                        style: GoogleFonts.spaceGrotesk(
+                                          fontSize: 14,
+                                          color: isDark
+                                              ? Colors.red[300]
+                                              : const Color(0xFFF44336),
+                                          height: 1.4,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: _treatmentSteps!
-                                    .asMap()
-                                    .entries
-                                    .map((entry) => _buildTreatmentStep(
-                                          entry.key + 1,
-                                          entry.value,
-                                          isDark,
-                                          isLast: entry.key ==
-                                              _treatmentSteps!.length - 1,
-                                        ))
-                                    .toList(),
+
+                            // Treatment steps
+                            if (_treatmentSteps != null &&
+                                _treatmentSteps!.isNotEmpty &&
+                                !_isLoadingTreatment)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: cardColor,
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black
+                                          .withOpacity(isDark ? 0.4 : 0.08),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: _treatmentSteps!
+                                      .asMap()
+                                      .entries
+                                      .map((entry) => _buildTreatmentStep(
+                                            entry.key + 1,
+                                            _t(entry.value),
+                                            isDark,
+                                            isLast: entry.key ==
+                                                _treatmentSteps!.length - 1,
+                                          ))
+                                      .toList(),
+                                ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+
+                    // ── Disease Carousel (Improvement 1) ──
+                    if (_result!.label != 'Not_Tomato')
+                      DiseaseCarousel(diseaseLabel: _result!.label),
+
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ── Not Tomato retake screen ──
+  Widget _buildNotTomatoScreen(bool isDark) {
+    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
+    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+
+    return Scaffold(
+      backgroundColor: bgColor,
+      appBar: AppBar(
+        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text("Scan Result",
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text("🍅", style: const TextStyle(fontSize: 56)),
+                const SizedBox(height: 20),
+                Text(
+                  _isFilipino
+                      ? "Hindi ito mukhang dahon ng kamatis."
+                      : "This doesn't look like a tomato leaf.",
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _isFilipino
+                      ? "Ang TomoLeafNet ay espesyal na ginawa para sa pagtuklas ng sakit ng dahon ng kamatis."
+                      : "TomoLeafNet is designed specifically for tomato leaf disease detection.",
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 14,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _onRetakePhoto,
+                        icon: const Icon(Icons.camera_alt, size: 18),
+                        label: Text("Retake Photo",
+                            style: GoogleFonts.spaceGrotesk(
+                                fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF309249),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.image, size: 18),
+                        label: Text("Gallery",
+                            style: GoogleFonts.spaceGrotesk(
+                                fontWeight: FontWeight.bold, fontSize: 13)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF309249),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          side: const BorderSide(color: Color(0xFF309249)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Low Confidence retake screen ──
+  Widget _buildLowConfidenceScreen(bool isDark) {
+    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
+    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final confPercent = (_result!.confidence * 100).toStringAsFixed(0);
+
+    return Scaffold(
+      backgroundColor: bgColor,
+      appBar: AppBar(
+        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text("Scan Result",
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.warning_amber_rounded,
+                    color: Color(0xFFF44336), size: 56),
+                const SizedBox(height: 16),
+                Text(
+                  "We're not confident about this result.",
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Confidence: $confPercent% \u2014 This is too low for a reliable diagnosis.",
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 14,
+                    color: const Color(0xFFF44336),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("For best results:",
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white70 : Colors.black87,
+                          )),
+                      const SizedBox(height: 8),
+                      _buildBullet("Take the photo in natural outdoor lighting", isDark),
+                      _buildBullet("Get close to the affected leaf (15\u201330 cm)", isDark),
+                      _buildBullet("Make sure the leaf fills the camera box", isDark),
+                      _buildBullet("Avoid blurry or shaded images", isDark),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _onRetakePhoto,
+                    icon: const Icon(Icons.camera_alt, size: 18),
+                    label: Text("Retake Photo",
+                        style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF309249),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: _onContinueAnyway,
+                    child: Text("Continue Anyway \u2192",
+                        style: GoogleFonts.spaceGrotesk(
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          fontWeight: FontWeight.w600,
+                        )),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBullet(String text, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("\u2022  ",
+              style: TextStyle(
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  fontSize: 14)),
+          Expanded(
+            child: Text(text,
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 13,
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  height: 1.4,
+                )),
+          ),
+        ],
       ),
     );
   }
@@ -646,7 +1294,6 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       );
     }
 
-    // Live scan: local file
     return Image.file(File(widget.imagePath!), fit: BoxFit.cover);
   }
 

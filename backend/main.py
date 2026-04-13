@@ -2,9 +2,11 @@
 FastAPI backend server for TomoLeafNet Plant AI.
 
 Bridges the Flutter mobile app and Groq Cloud (Llama 3.1 8B Instant).
-Provides two endpoints:
-  - /chat   → Plant health chat assistant
-  - /diagnose → AI-generated treatment steps for detected diseases
+Provides endpoints:
+  - /chat      → Plant health chat assistant
+  - /diagnose  → AI-generated treatment steps for detected diseases
+  - /translate  → Filipino translation proxy (Google Translate API)
+  - /gradcam   → GradCAM heatmap visualization
 
 Usage:
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -12,9 +14,12 @@ Usage:
 
 import os
 import re
+import io
+import base64
 from contextlib import asynccontextmanager
 
 import httpx
+import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,8 +34,25 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+GOOGLE_TRANSLATE_API_KEY = os.getenv("GOOGLE_TRANSLATE_API_KEY", "")
+
+# GradCAM model (loaded lazily)
+_gradcam_model = None
+_grad_model = None
+MODEL_PATH = os.getenv("KERAS_MODEL_PATH", "tomoleafnet_v4_final.keras")
 
 TOMO_SYSTEM_PROMPT = """You are Tomo, a friendly and knowledgeable agricultural assistant for TomoLeafNet — a tomato leaf disease detection app built for Filipino farmers. You specialize in tomato plant health, leaf disease identification, treatment, and prevention.
+
+TomoLeafNet now detects the following 5 tomato leaf conditions:
+Early Blight, Leaf Mold, Leaf Miner, Healthy, and Not a Tomato Leaf.
+When referencing disease classes, only refer to these 5 conditions.
+Do not reference Late Blight, Septoria, or Bacterial Spot as these
+are no longer detected by the current model.
+
+If a scan result is "Not a Tomato Leaf" (Not_Tomato), it means the image
+is not a tomato leaf at all — it could be a random object, texture, or
+non-tomato plant. Politely inform the user that the image does not appear
+to be a tomato leaf, and ask them to retake the photo with a real tomato leaf.
 
 Your tone should be:
 - Warm, approachable, and encouraging — like a trusted field agronomist
@@ -47,11 +69,11 @@ Confidence-Aware Rules:
 
 ≥ 80% (High Confidence):
 → Respond with certainty. Provide direct, actionable treatment advice.
-→ Example tone: "Based on your scan, your plant has Late Blight. Here's what you should do right away..."
+→ Example tone: "Based on your scan, your plant has Early Blight. Here's what you should do right away..."
 
 60–79% (Moderate Confidence):
 → Acknowledge some uncertainty. Provide advice but recommend monitoring.
-→ Example tone: "Your scan suggests Late Blight, though I'm not fully certain. Here's what to watch for and what you can do in the meantime..."
+→ Example tone: "Your scan suggests Leaf Mold, though I'm not fully certain. Here's what to watch for and what you can do in the meantime..."
 
 40–59% (Low Confidence):
 → Express caution. Recommend retaking the photo before acting.
@@ -64,11 +86,11 @@ Confidence-Aware Rules:
 You only discuss topics related to plant health, agriculture, tomato farming, and the TomoLeafNet app. If asked about unrelated topics, politely redirect the conversation back to plant health."""
 
 DIAGNOSE_PROMPT_TEMPLATE = (
-    "You are a plant disease specialist for tomato crops. A tomato leaf has been "
-    "diagnosed with {disease} at {confidence}% confidence. Provide a short, "
-    "practical, step-by-step treatment guide that a farmer can follow immediately. "
-    "Format the response as exactly 3 to 5 numbered steps. Keep each step concise, "
-    "clear, and actionable. Avoid technical jargon."
+    "You are a plant disease specialist for tomato crops in the Philippines. "
+    "A tomato leaf has been diagnosed with {disease} at {confidence}% confidence. "
+    "This is a real farm field diagnosis. Provide a short, practical, step-by-step "
+    "treatment guide that a Filipino farmer can follow immediately. "
+    "Format as exactly 3 to 5 numbered steps. Keep each step concise and actionable."
 )
 
 # ── Shared HTTP client (reused across requests) ──────────────────────
@@ -150,6 +172,24 @@ class DiagnoseRequest(BaseModel):
 
 class DiagnoseResponse(BaseModel):
     steps: list[str]
+
+
+class TranslateRequest(BaseModel):
+    texts: list[str]
+    target_language: str = "tl"  # Filipino/Tagalog
+
+
+class TranslateResponse(BaseModel):
+    translations: list[str]
+
+
+class GradCamRequest(BaseModel):
+    image_base64: str
+    predicted_class_index: int
+
+
+class GradCamResponse(BaseModel):
+    gradcam_image_base64: str
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -387,6 +427,167 @@ async def diagnose(request: DiagnoseRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Unexpected error: {str(e)}",
+        )
+
+
+@app.post("/translate", response_model=TranslateResponse)
+async def translate(request: TranslateRequest):
+    """
+    Proxy translation requests to the Google Translate API.
+    Keeps the API key server-side only.
+    """
+    if not GOOGLE_TRANSLATE_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="GOOGLE_TRANSLATE_API_KEY is not configured on the server.",
+        )
+
+    client: httpx.AsyncClient = app.state.http_client
+    translations = []
+
+    try:
+        for text in request.texts:
+            resp = await client.post(
+                "https://translation.googleapis.com/language/translate/v2",
+                params={"key": GOOGLE_TRANSLATE_API_KEY},
+                json={
+                    "q": text,
+                    "target": request.target_language,
+                    "source": "en",
+                    "format": "text",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            translated = (
+                data.get("data", {})
+                .get("translations", [{}])[0]
+                .get("translatedText", text)
+            )
+            translations.append(translated)
+
+        return TranslateResponse(translations=translations)
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Google Translate error: {e.response.text}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Translation error: {str(e)}",
+        )
+
+
+@app.post("/gradcam", response_model=GradCamResponse)
+async def gradcam(request: GradCamRequest):
+    """
+    Compute GradCAM heatmap for a given image and predicted class.
+    Returns the heatmap-overlaid image as base64 PNG.
+    """
+    try:
+        import tensorflow as tf
+        from PIL import Image
+
+        global _gradcam_model, _grad_model
+
+        # Lazy-load the Keras model
+        if _gradcam_model is None:
+            if not os.path.exists(MODEL_PATH):
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Model file not found: {MODEL_PATH}",
+                )
+            _gradcam_model = tf.keras.models.load_model(MODEL_PATH)
+
+        if _grad_model is None:
+            # Find the last convolutional layer
+            last_conv_layer = None
+            for layer in reversed(_gradcam_model.layers):
+                if len(layer.output.shape) == 4:  # Conv layer
+                    last_conv_layer = layer
+                    break
+            if last_conv_layer is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Could not find a convolutional layer in the model.",
+                )
+            _grad_model = tf.keras.Model(
+                inputs=_gradcam_model.input,
+                outputs=[last_conv_layer.output, _gradcam_model.output],
+            )
+
+        # Decode and preprocess the image
+        img_bytes = base64.b64decode(request.image_base64)
+        pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+
+        # Center crop to square
+        w, h = pil_img.size
+        min_dim = min(w, h)
+        left = (w - min_dim) // 2
+        top = (h - min_dim) // 2
+        pil_img = pil_img.crop((left, top, left + min_dim, top + min_dim))
+        pil_img_resized = pil_img.resize((224, 224), Image.BILINEAR)
+        img_array = np.array(pil_img_resized, dtype=np.float32)
+        img_array = np.expand_dims(img_array, axis=0)  # (1, 224, 224, 3)
+
+        # Compute GradCAM
+        with tf.GradientTape() as tape:
+            last_conv_layer_output, preds = _grad_model(img_array)
+            class_channel = preds[:, request.predicted_class_index]
+
+        grads = tape.gradient(class_channel, last_conv_layer_output)
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+
+        heatmap = last_conv_layer_output[0] @ pooled_grads[..., tf.newaxis]
+        heatmap = tf.squeeze(heatmap)
+        heatmap = tf.maximum(heatmap, 0) / (tf.math.reduce_max(heatmap) + 1e-8)
+        heatmap = heatmap.numpy()
+
+        # Resize heatmap to match original image
+        heatmap_resized = np.uint8(255 * heatmap)
+        heatmap_pil = Image.fromarray(heatmap_resized).resize(
+            (224, 224), Image.BILINEAR
+        )
+
+        # Apply colormap (blue -> red)
+        import colorsys
+
+        heatmap_color = np.zeros((224, 224, 3), dtype=np.uint8)
+        heatmap_np = np.array(heatmap_pil, dtype=np.float32) / 255.0
+        for y in range(224):
+            for x in range(224):
+                val = heatmap_np[y, x]
+                # Blue (0.66) -> Red (0.0) HSV mapping
+                hue = 0.66 * (1.0 - val)
+                r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+                heatmap_color[y, x] = [int(r * 255), int(g * 255), int(b * 255)]
+
+        heatmap_overlay = Image.fromarray(heatmap_color)
+
+        # Blend with original
+        original_resized = pil_img.resize((224, 224), Image.BILINEAR)
+        blended = Image.blend(original_resized, heatmap_overlay, alpha=0.4)
+
+        # Encode to base64 PNG
+        buffer = io.BytesIO()
+        blended.save(buffer, format="PNG")
+        result_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        return GradCamResponse(gradcam_image_base64=result_base64)
+
+    except HTTPException:
+        raise
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="TensorFlow or PIL not available on the server.",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"GradCAM computation error: {str(e)}",
         )
 
 

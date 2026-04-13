@@ -15,6 +15,7 @@ import 'screens/auth/auth_wrapper.dart';
 import 'screens/reminders_screen.dart';
 import 'services/fcm_service.dart';
 import 'services/local_notification_service.dart';
+import 'widgets/onboarding_tutorial.dart';
 
 List<CameraDescription> cameras = [];
 
@@ -94,6 +95,15 @@ class _MainScreenState extends State<MainScreen> {
     const HistoryScreen(),
     const MoreScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Show onboarding tutorial on first launch (Improvement 2)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      OnboardingTutorial.showIfFirstTime(context);
+    });
+  }
 
   /// Show a bottom sheet letting the user choose between Identify and Diagnose.
   void _showScanTypeChooser(BuildContext context) {

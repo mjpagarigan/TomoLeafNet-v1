@@ -21,6 +21,187 @@ class _HistoryScreenState extends State<HistoryScreen> {
   final _firestoreService = FirestoreService();
   final _storageService = StorageService();
 
+  // Multi-select state (Improvement 5)
+  bool _isSelectMode = false;
+  final Set<String> _selectedScanIds = {};
+  bool _isDeleting = false;
+
+  void _enterSelectMode() {
+    setState(() {
+      _isSelectMode = true;
+      _selectedScanIds.clear();
+    });
+  }
+
+  void _exitSelectMode() {
+    setState(() {
+      _isSelectMode = false;
+      _selectedScanIds.clear();
+    });
+  }
+
+  void _toggleSelection(String scanId) {
+    setState(() {
+      if (_selectedScanIds.contains(scanId)) {
+        _selectedScanIds.remove(scanId);
+      } else {
+        _selectedScanIds.add(scanId);
+      }
+    });
+  }
+
+  void _selectAll(List<ScanModel> scans) {
+    setState(() {
+      _selectedScanIds.addAll(scans.map((s) => s.scanId));
+    });
+  }
+
+  Future<void> _deleteSelected(String userId) async {
+    if (_selectedScanIds.isEmpty) return;
+
+    final count = _selectedScanIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete $count scan${count > 1 ? 's' : ''}?',
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
+        content: Text('This action cannot be undone.',
+            style: GoogleFonts.spaceGrotesk()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.spaceGrotesk()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete',
+                style: GoogleFonts.spaceGrotesk(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isDeleting = true);
+
+    try {
+      for (final scanId in _selectedScanIds) {
+        await _storageService.deleteScanImage(uid: userId, scanId: scanId);
+        await _firestoreService.deleteScan(userId, scanId);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Some scans could not be deleted.',
+                  style: GoogleFonts.spaceGrotesk())),
+        );
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isDeleting = false;
+        _isSelectMode = false;
+        _selectedScanIds.clear();
+      });
+    }
+  }
+
+  void _showCardMenu(ScanModel scan, String userId) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[600] : Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.visibility, color: Color(0xFF309249)),
+              title: Text('View Result',
+                  style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w500)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _openScanResult(scan);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              title: Text('Delete This Scan',
+                  style: GoogleFonts.spaceGrotesk(
+                      fontWeight: FontWeight.w500, color: Colors.redAccent)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx2) => AlertDialog(
+                    title: Text('Delete Scan',
+                        style: GoogleFonts.spaceGrotesk(
+                            fontWeight: FontWeight.w600)),
+                    content: Text('Remove this scan from your history?',
+                        style: GoogleFonts.spaceGrotesk()),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx2, false),
+                        child:
+                            Text('Cancel', style: GoogleFonts.spaceGrotesk()),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx2, true),
+                        child: Text('Delete',
+                            style: GoogleFonts.spaceGrotesk(
+                                color: Colors.redAccent)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  try {
+                    await _storageService.deleteScanImage(
+                        uid: userId, scanId: scan.scanId);
+                    await _firestoreService.deleteScan(userId, scan.scanId);
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text('Failed to delete scan.',
+                                style: GoogleFonts.spaceGrotesk())),
+                      );
+                    }
+                  }
+                }
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.close,
+                  color: isDark ? Colors.grey[400] : Colors.grey[600]),
+              title: Text('Cancel',
+                  style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w500)),
+              onTap: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -36,13 +217,66 @@ class _HistoryScreenState extends State<HistoryScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 20),
-              Text(
-                "My Plant History",
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black,
-                ),
+              // Header with Select/Cancel button
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (_isSelectMode)
+                    Text(
+                      "${_selectedScanIds.length} selected",
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                    )
+                  else
+                    Text(
+                      "My Plant History",
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                    ),
+                  Row(
+                    children: [
+                      if (_isSelectMode) ...[
+                        if (_isDeleting)
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.redAccent,
+                            ),
+                          )
+                        else
+                          IconButton(
+                            icon: const Icon(Icons.delete,
+                                color: Colors.redAccent, size: 26),
+                            onPressed: user == null
+                                ? null
+                                : () => _deleteSelected(user.uid),
+                          ),
+                        TextButton(
+                          onPressed: _exitSelectMode,
+                          child: Text('Cancel',
+                              style: GoogleFonts.spaceGrotesk(
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF309249))),
+                        ),
+                      ] else
+                        TextButton(
+                          onPressed: _enterSelectMode,
+                          child: Text('Select',
+                              style: GoogleFonts.spaceGrotesk(
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF309249))),
+                        ),
+                    ],
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
               // Toggle Switch
@@ -60,7 +294,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              // History List — real-time from Firestore
+              // History List
               Expanded(
                 child: user == null
                     ? Center(
@@ -72,9 +306,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     : StreamBuilder<List<ScanModel>>(
                         stream: _firestoreService.getUserScansStream(user.uid),
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
                             return const Center(
-                              child: CircularProgressIndicator(color: Color(0xFF309249)),
+                              child: CircularProgressIndicator(
+                                  color: Color(0xFF309249)),
                             );
                           }
 
@@ -93,9 +329,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Icon(
-                                    _showHealthy ? Icons.eco : Icons.search_off,
+                                    _showHealthy
+                                        ? Icons.eco
+                                        : Icons.search_off,
                                     size: 60,
-                                    color: const Color(0xFF309249).withAlpha(80),
+                                    color: const Color(0xFF309249)
+                                        .withAlpha(80),
                                   ),
                                   const SizedBox(height: 16),
                                   Text(
@@ -104,7 +343,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                         : 'No infected scans yet',
                                     style: GoogleFonts.spaceGrotesk(
                                       fontSize: 16,
-                                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                      color: isDark
+                                          ? Colors.grey[400]
+                                          : Colors.grey[600],
                                     ),
                                   ),
                                   const SizedBox(height: 8),
@@ -112,7 +353,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                     'Scan a leaf to start tracking!',
                                     style: GoogleFonts.spaceGrotesk(
                                       fontSize: 13,
-                                      color: isDark ? Colors.grey[500] : Colors.grey[500],
+                                      color: isDark
+                                          ? Colors.grey[500]
+                                          : Colors.grey[500],
                                     ),
                                   ),
                                 ],
@@ -120,18 +363,45 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             );
                           }
 
-                          final diseaseNumbers = _computeDiseaseNumbers(filteredScans);
+                          final diseaseNumbers =
+                              _computeDiseaseNumbers(filteredScans);
 
-                          return ListView.builder(
-                            itemCount: filteredScans.length,
-                            itemBuilder: (context, index) {
-                              return _buildScanCard(
-                                scan: filteredScans[index],
-                                isDark: isDark,
-                                userId: user.uid,
-                                diseaseNumber: diseaseNumbers[index],
-                              );
-                            },
+                          // Select All button when in select mode
+                          return Column(
+                            children: [
+                              if (_isSelectMode)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.only(bottom: 8),
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                      onPressed: () =>
+                                          _selectAll(filteredScans),
+                                      child: Text('Select All',
+                                          style: GoogleFonts.spaceGrotesk(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13,
+                                              color: const Color(
+                                                  0xFF309249))),
+                                    ),
+                                  ),
+                                ),
+                              Expanded(
+                                child: ListView.builder(
+                                  itemCount: filteredScans.length,
+                                  itemBuilder: (context, index) {
+                                    return _buildScanCard(
+                                      scan: filteredScans[index],
+                                      isDark: isDark,
+                                      userId: user.uid,
+                                      diseaseNumber:
+                                          diseaseNumbers[index],
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
                           );
                         },
                       ),
@@ -147,7 +417,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final isActive = _showHealthy == isHealthyToggle;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _showHealthy = isHealthyToggle),
+        onTap: () {
+          setState(() => _showHealthy = isHealthyToggle);
+          if (_isSelectMode) _selectedScanIds.clear();
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
@@ -180,8 +453,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  /// Returns a list parallel to [scans] where each entry is null (no
-  /// numbering needed) or the 1-based occurrence index for that disease.
   List<int?> _computeDiseaseNumbers(List<ScanModel> scans) {
     final counts = <String, int>{};
     for (final s in scans) {
@@ -209,203 +480,236 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }) {
     final isHealthy = scan.predictedDisease == 'Healthy';
     final baseName = _getDisplayName(scan.predictedDisease);
-    final displayName = diseaseNumber != null ? '$baseName #$diseaseNumber' : baseName;
+    final displayName =
+        diseaseNumber != null ? '$baseName #$diseaseNumber' : baseName;
     final dateStr = DateFormat('MMM d, yyyy  h:mm a').format(scan.timestamp);
     final isIdentify = scan.scanType == 'identify';
     final isDiagnose = scan.scanType == 'diagnose';
+    final isSelected = _selectedScanIds.contains(scan.scanId);
 
-    return Dismissible(
-      key: Key(scan.scanId),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 24),
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.redAccent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Icon(Icons.delete, color: Colors.white),
-      ),
-      confirmDismiss: (direction) async {
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text('Delete Scan', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
-            content: Text('Remove this scan from your history?', style: GoogleFonts.spaceGrotesk()),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: Text('Cancel', style: GoogleFonts.spaceGrotesk()),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: Text('Delete', style: GoogleFonts.spaceGrotesk(color: Colors.redAccent)),
-              ),
-            ],
-          ),
-        );
-        if (confirmed != true) return false;
-        try {
-          await _storageService.deleteScanImage(uid: userId, scanId: scan.scanId);
-          await _firestoreService.deleteScan(userId, scan.scanId);
-          return true;
-        } catch (e) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Failed to delete scan. Please try again.', style: GoogleFonts.spaceGrotesk())),
-            );
-          }
-          return false;
+    return GestureDetector(
+      onTap: () {
+        if (_isSelectMode) {
+          _toggleSelection(scan.scanId);
+        } else {
+          _openScanResult(scan);
         }
       },
-      onDismissed: (_) {},
-      child: GestureDetector(
-        onTap: () => _openScanResult(scan),
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  // Thumbnail from Cloud Storage
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: SizedBox(
-                      width: 60,
-                      height: 60,
-                      child: scan.imageUrl != null && scan.imageUrl!.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: scan.imageUrl!,
-                              fit: BoxFit.cover,
-                              placeholder: (_, __) => Container(
-                                color: isDark ? Colors.grey[800] : Colors.grey[200],
-                                child: const Center(
-                                  child: SizedBox(
-                                    width: 20, height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF309249)),
-                                  ),
+      onLongPress: () {
+        if (!_isSelectMode) {
+          _enterSelectMode();
+          _toggleSelection(scan.scanId);
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: isSelected
+              ? Border.all(color: const Color(0xFF309249), width: 2)
+              : null,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                // Checkbox in select mode
+                if (_isSelectMode) ...[
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSelected
+                          ? const Color(0xFF309249)
+                          : Colors.transparent,
+                      border: Border.all(
+                        color: isSelected
+                            ? const Color(0xFF309249)
+                            : (isDark ? Colors.grey[600]! : Colors.grey[400]!),
+                        width: 2,
+                      ),
+                    ),
+                    child: isSelected
+                        ? const Icon(Icons.check,
+                            color: Colors.white, size: 16)
+                        : null,
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                // Thumbnail
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: scan.imageUrl != null && scan.imageUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: scan.imageUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(
+                              color: isDark
+                                  ? Colors.grey[800]
+                                  : Colors.grey[200],
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF309249)),
                                 ),
                               ),
-                              errorWidget: (_, __, ___) => Container(
-                                color: isDark ? Colors.grey[800] : Colors.grey[200],
-                                child: Icon(Icons.eco, color: Colors.grey[400]),
-                              ),
-                            )
-                          : Container(
-                              color: isDark ? Colors.grey[800] : Colors.grey[200],
-                              child: Icon(Icons.eco, color: Colors.grey[400]),
                             ),
+                            errorWidget: (_, __, ___) => Container(
+                              color: isDark
+                                  ? Colors.grey[800]
+                                  : Colors.grey[200],
+                              child:
+                                  Icon(Icons.eco, color: Colors.grey[400]),
+                            ),
+                          )
+                        : Container(
+                            color: isDark
+                                ? Colors.grey[800]
+                                : Colors.grey[200],
+                            child:
+                                Icon(Icons.eco, color: Colors.grey[400]),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Details
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              displayName,
+                              style: GoogleFonts.spaceGrotesk(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color:
+                                    isDark ? Colors.white : Colors.black87,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            isHealthy
+                                ? Icons.check_circle
+                                : Icons.warning_rounded,
+                            color: isHealthy
+                                ? const Color(0xFF309249)
+                                : Colors.redAccent,
+                            size: 16,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        dateStr,
+                        style: GoogleFonts.spaceGrotesk(
+                          color: Colors.grey[500],
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Confidence badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _getConfidenceBadgeColor(
+                        scan.confidenceScore, isDark),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    scan.confidenceLabel.isNotEmpty
+                        ? scan.confidenceLabel
+                        : '${(scan.confidenceScore * 100).toInt()}%',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: _getConfidenceTextColor(
+                          scan.confidenceScore),
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  // Details
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+                // 3-dot menu (Improvement 5)
+                if (!_isSelectMode)
+                  IconButton(
+                    icon: Icon(Icons.more_vert,
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                        minWidth: 32, minHeight: 32),
+                    onPressed: () => _showCardMenu(scan, userId),
+                  ),
+              ],
+            ),
+            // Scan type badges + View Result
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _buildScanTypeBadge(
+                  label: isIdentify
+                      ? "Identify"
+                      : (isDiagnose ? "Diagnose" : "Scan"),
+                  color: isIdentify
+                      ? const Color(0xFF2D6A2E)
+                      : (isDiagnose
+                          ? const Color(0xFF455A64)
+                          : Colors.grey),
+                  icon: isDiagnose ? Icons.healing : null,
+                  isDark: isDark,
+                ),
+                const Spacer(),
+                if (isDiagnose &&
+                    scan.treatmentSteps != null &&
+                    scan.treatmentSteps!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Row(
                       children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                displayName,
-                                style: GoogleFonts.spaceGrotesk(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Icon(
-                              isHealthy ? Icons.check_circle : Icons.warning_rounded,
-                              color: isHealthy ? const Color(0xFF309249) : Colors.redAccent,
-                              size: 16,
-                            ),
-                          ],
+                        Icon(
+                          Icons.check_circle_outline,
+                          size: 14,
+                          color: isDark
+                              ? Colors.grey[400]
+                              : Colors.grey[600],
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(width: 4),
                         Text(
-                          dateStr,
+                          "${scan.treatmentSteps!.length} steps",
                           style: GoogleFonts.spaceGrotesk(
-                            color: Colors.grey[500],
-                            fontSize: 12,
+                            fontSize: 11,
+                            color: isDark
+                                ? Colors.grey[400]
+                                : Colors.grey[600],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  // Confidence badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _getConfidenceBadgeColor(scan.confidenceScore, isDark),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      scan.confidenceLabel.isNotEmpty
-                          ? scan.confidenceLabel
-                          : '${(scan.confidenceScore * 100).toInt()}%',
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: _getConfidenceTextColor(scan.confidenceScore),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              // Scan type badges + View Result
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  // Scan type badge
-                  _buildScanTypeBadge(
-                    label: isIdentify ? "Identify" : (isDiagnose ? "Diagnose" : "Scan"),
-                    color: isIdentify
-                        ? const Color(0xFF2D6A2E)
-                        : (isDiagnose ? const Color(0xFF455A64) : Colors.grey),
-                    icon: isDiagnose ? Icons.healing : null,
-                    isDark: isDark,
-                  ),
-                  const Spacer(),
-                  // Show treatment indicator for diagnose scans
-                  if (isDiagnose && scan.treatmentSteps != null && scan.treatmentSteps!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.check_circle_outline,
-                            size: 14,
-                            color: isDark ? Colors.grey[400] : Colors.grey[600],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            "${scan.treatmentSteps!.length} steps",
-                            style: GoogleFonts.spaceGrotesk(
-                              fontSize: 11,
-                              color: isDark ? Colors.grey[400] : Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  // View Result indicator
+                if (!_isSelectMode)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -425,10 +729,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ),
                     ],
                   ),
-                ],
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -487,18 +790,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   String _getDisplayName(String label) {
     const names = {
-      'Bacterial_Spot': 'Bacterial Spot',
       'Early_Blight': 'Early Blight',
-      'Healthy': 'Healthy Leaf',
-      'Late_Blight': 'Late Blight',
-      'Septoria': 'Septoria Leaf Spot',
+      'Healthy': 'Healthy',
+      'Leaf_Miner': 'Leaf Miner',
+      'Leaf_Mold': 'Leaf Mold',
+      'Not_Tomato': 'Not a Tomato Leaf',
     };
     return names[label] ?? label.replaceAll('_', ' ');
   }
 
   Color _getConfidenceBadgeColor(double confidence, bool isDark) {
-    if (confidence >= 0.80) return isDark ? const Color(0xFF1B3A1B) : const Color(0xFFE8F3E5);
-    if (confidence >= 0.60) return isDark ? const Color(0xFF3A3020) : const Color(0xFFFFF3E0);
+    if (confidence >= 0.80)
+      return isDark ? const Color(0xFF1B3A1B) : const Color(0xFFE8F3E5);
+    if (confidence >= 0.60)
+      return isDark ? const Color(0xFF3A3020) : const Color(0xFFFFF3E0);
     return isDark ? const Color(0xFF3A2020) : const Color(0xFFFFEBEE);
   }
 

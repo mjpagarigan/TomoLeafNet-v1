@@ -60,4 +60,10 @@ class AppConfig {
   static String get reminderScheduleUrl => '$_baseUrl/reminders/schedule';
   static String get reminderUpdateUrl => '$_baseUrl/reminders/update';
   static String get reminderCancelUrl => '$_baseUrl/reminders/cancel';
+
+  // ── Translation endpoint (Improvement 3) ────────────────────────
+  static String get translateUrl => '$_baseUrl/translate';
+
+  // ── GradCAM endpoint (Improvement 4) ────────────────────────────
+  static String get gradcamUrl => '$_baseUrl/gradcam';
 }

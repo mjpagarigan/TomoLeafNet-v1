@@ -68,6 +68,9 @@ dependencies:
   # Date formatting
   intl: ^0.19.0
 
+  # Image processing (square crop for camera)
+  image: ^4.1.3
+
   # Articles Section
   url_launcher: ^6.2.6
   webview_flutter: ^4.7.0
@@ -86,10 +89,14 @@ flutter:
 
   # Assets for TFLite model and labels
   assets:
-    - assets/tomoleafnet_v3.tflite
+    - assets/tomoleafnet_v4.tflite
     - assets/labels.txt
     - assets/images/
     - assets/articles/
+    - assets/disease_samples/early_blight/
+    - assets/disease_samples/healthy/
+    - assets/disease_samples/leaf_miner/
+    - assets/disease_samples/leaf_mold/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
