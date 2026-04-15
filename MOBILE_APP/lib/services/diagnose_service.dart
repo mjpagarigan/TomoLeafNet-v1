@@ -9,7 +9,7 @@ import '../core/config/app_config.dart';
 class DiagnoseService {
   /// Request treatment steps for a detected disease.
   ///
-  /// [disease] is the raw label from TFLite inference (e.g. "Late_Blight").
+  /// [disease] is the raw label from TFLite inference (e.g. "Early_Blight").
   /// [confidence] is the confidence score as a percentage (e.g. 68.7).
   ///
   /// Returns a list of numbered treatment step strings.

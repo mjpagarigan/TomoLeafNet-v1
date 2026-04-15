@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -93,10 +94,10 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
   bool _showLowConfidenceWarning = false;
   bool _continuedAnyway = false;
 
-  // GradCAM state (Improvement 4)
+  // Heatmap state (Improvement 4 — on-device occlusion sensitivity)
   bool _showGradCam = false;
   bool _isLoadingGradCam = false;
-  String? _gradCamImageBase64;
+  Uint8List? _heatmapBytes;
 
   // Translation state (Improvement 3)
   bool _isFilipino = false;
@@ -192,8 +193,8 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         return;
       }
 
-      // Improvement 8: Low confidence (<60%)
-      if (result.confidence < 0.60) {
+      // Improvement 8: Low confidence (<60%) or ambiguous top-2 gap
+      if (result.confidence < 0.60 || result.isAmbiguous) {
         setState(() => _showLowConfidenceWarning = true);
         return;
       }
@@ -305,50 +306,35 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     }
   }
 
-  // ── GradCAM ──
+  // ── Heatmap (on-device occlusion sensitivity) ──
   Future<void> _toggleGradCam() async {
     if (_showGradCam) {
       setState(() => _showGradCam = false);
       return;
     }
-    if (_gradCamImageBase64 != null) {
+    if (_heatmapBytes != null) {
       setState(() => _showGradCam = true);
       return;
     }
 
-    // Find the image to send
     String? imagePath = widget.imagePath ?? widget.preloadedLocalImagePath;
-    if (imagePath == null) {
-      setState(() => _isLoadingGradCam = false);
-      return;
-    }
+    if (imagePath == null || _result == null) return;
 
     setState(() => _isLoadingGradCam = true);
     try {
-      final imageBytes = await File(imagePath).readAsBytes();
-      final response = await http.post(
-        Uri.parse(AppConfig.gradcamUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'image_base64': base64Encode(imageBytes),
-          'predicted_class_index': _result!.index,
-        }),
-      ).timeout(const Duration(seconds: 30));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (mounted) {
-          setState(() {
-            _gradCamImageBase64 = data['gradcam_image_base64'];
-            _showGradCam = true;
-            _isLoadingGradCam = false;
-          });
-        }
-      } else {
-        if (mounted) setState(() => _isLoadingGradCam = false);
+      final bytes = await _tfliteService.generateHeatmap(
+        imagePath,
+        _result!.index,
+      );
+      if (mounted) {
+        setState(() {
+          _heatmapBytes = bytes;
+          _showGradCam = true;
+          _isLoadingGradCam = false;
+        });
       }
     } catch (e) {
-      print('GradCAM error: $e');
+      print('Heatmap error: $e');
       if (mounted) setState(() => _isLoadingGradCam = false);
     }
   }
@@ -559,9 +545,9 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 SizedBox(
                   width: double.infinity,
                   height: 350,
-                  child: _showGradCam && _gradCamImageBase64 != null
+                  child: _showGradCam && _heatmapBytes != null
                       ? Image.memory(
-                          base64Decode(_gradCamImageBase64!),
+                          _heatmapBytes!,
                           fit: BoxFit.cover,
                         )
                       : _buildHeroImage(isDark),
@@ -663,7 +649,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             ),
 
             // GradCAM label
-            if (_showGradCam && _gradCamImageBase64 != null)
+            if (_showGradCam && _heatmapBytes != null)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),

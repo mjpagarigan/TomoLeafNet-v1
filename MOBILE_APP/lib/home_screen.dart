@@ -475,7 +475,7 @@ class _HomeScreenState extends State<HomeScreen> {
         icon: Icons.search_off,
         title: 'No scans found for \u201c${_searchController.text}\u201d',
         subtitle:
-            "Try searching for a disease name like \u2018Late Blight\u2019 or \u2018Bacterial Spot\u2019",
+            "Try searching for a disease name like \u2018Early Blight\u2019 or \u2018Leaf Mold\u2019",
         isDark: isDark,
       );
     }
@@ -731,11 +731,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _getSearchDisplayName(String label) {
     const names = {
-      'Bacterial_Spot': 'Bacterial Spot',
       'Early_Blight': 'Early Blight',
-      'Healthy': 'Healthy Leaf',
-      'Late_Blight': 'Late Blight',
-      'Septoria': 'Septoria Leaf Spot',
+      'Healthy': 'Healthy',
+      'Leaf_Miner': 'Leaf Miner',
+      'Leaf_Mold': 'Leaf Mold',
+      'Not_Tomato': 'Not a Tomato Leaf',
     };
     return names[label] ?? label.replaceAll('_', ' ');
   }

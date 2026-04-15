@@ -1,11 +1,14 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'identify_result_screen.dart';
 import 'diagnose_result_screen.dart';
+import 'services/tflite_service.dart';
 import 'main.dart'; // To access global 'cameras' list
 
 class CameraScreen extends StatefulWidget {
@@ -23,10 +26,34 @@ class _CameraScreenState extends State<CameraScreen> {
   FlashMode _flashMode = FlashMode.off;
   bool _isProcessing = false;
 
+  // Real-time detection state
+  final TFLiteService _tfliteService = TFLiteService();
+  bool _isModelReady = false;
+  bool _isAnalyzing = false;
+  Color _viewfinderColor = const Color(0xFF4CAF50); // default green
+  String _detectionLabel = "";
+  double _detectionConfidence = 0.0;
+  bool _isTomatoLeaf = true;
+  int _consecutiveNotTomato = 0;
+  int _consecutiveTomato = 0;
+  static const int _debounceCount = 3; // require 3 consecutive same results
+
   @override
   void initState() {
     super.initState();
     _initializeCamera();
+    _loadModel();
+  }
+
+  Future<void> _loadModel() async {
+    try {
+      await _tfliteService.loadModel();
+      if (mounted) {
+        setState(() => _isModelReady = true);
+      }
+    } catch (e) {
+      print("TFLite model load error: $e");
+    }
   }
 
   Future<void> _initializeCamera() async {
@@ -40,8 +67,9 @@ class _CameraScreenState extends State<CameraScreen> {
 
     _controller = CameraController(
       camera,
-      ResolutionPreset.high,
+      ResolutionPreset.medium, // Use medium for faster stream processing
       enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.yuv420,
     );
 
     try {
@@ -52,14 +80,104 @@ class _CameraScreenState extends State<CameraScreen> {
           _flashMode = FlashMode.off;
           _isCameraInitialized = true;
         });
+        _startImageStream();
       }
     } catch (e) {
       print("Camera initialization error: $e");
     }
   }
 
+  /// Start the camera image stream for real-time leaf detection.
+  void _startImageStream() {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+
+    _controller!.startImageStream((CameraImage cameraImage) {
+      if (_isAnalyzing || !_isModelReady || _isProcessing) return;
+      _isAnalyzing = true;
+      _processFrame(cameraImage);
+    });
+  }
+
+  /// Stop the image stream (before taking a picture or disposing).
+  Future<void> _stopImageStream() async {
+    try {
+      await _controller?.stopImageStream();
+    } catch (_) {}
+  }
+
+  /// Process a single camera frame for tomato leaf detection.
+  Future<void> _processFrame(CameraImage cameraImage) async {
+    try {
+      // Convert YUV420/BGRA camera image to RGBA bytes on a background isolate
+      final rgbaBytes = await compute(_convertCameraImage, _CameraImageData(
+        planes: cameraImage.planes.map((p) => _PlaneData(
+          bytes: Uint8List.fromList(p.bytes),
+          bytesPerRow: p.bytesPerRow,
+          bytesPerPixel: p.bytesPerPixel,
+        )).toList(),
+        width: cameraImage.width,
+        height: cameraImage.height,
+        formatGroupRaw: cameraImage.format.group.index,
+      ));
+
+      if (rgbaBytes == null || !_isModelReady || !mounted) {
+        _isAnalyzing = false;
+        return;
+      }
+
+      // Run inference on the viewfinder region
+      final result = _tfliteService.runInferenceOnFrame(
+        rgbaBytes,
+        cameraImage.width,
+        cameraImage.height,
+      );
+
+      final isNotTomato = result.label == 'Not_Tomato';
+
+      // Debounce: require consecutive same-class predictions
+      if (isNotTomato) {
+        _consecutiveNotTomato++;
+        _consecutiveTomato = 0;
+      } else {
+        _consecutiveTomato++;
+        _consecutiveNotTomato = 0;
+      }
+
+      if (mounted) {
+        if (_consecutiveNotTomato >= _debounceCount && _isTomatoLeaf) {
+          setState(() {
+            _isTomatoLeaf = false;
+            _viewfinderColor = const Color(0xFFE53935); // red
+            _detectionLabel = "Not a tomato leaf";
+            _detectionConfidence = result.confidence;
+          });
+        } else if (_consecutiveTomato >= _debounceCount && !_isTomatoLeaf) {
+          setState(() {
+            _isTomatoLeaf = true;
+            _viewfinderColor = const Color(0xFF4CAF50); // green
+            _detectionLabel = result.displayName;
+            _detectionConfidence = result.confidence;
+          });
+        } else if (_isTomatoLeaf && _consecutiveTomato >= _debounceCount) {
+          // Update label for current tomato class
+          setState(() {
+            _detectionLabel = result.displayName;
+            _detectionConfidence = result.confidence;
+          });
+        }
+      }
+    } catch (e) {
+      print("Frame processing error: $e");
+    } finally {
+      // Throttle: wait 400ms before processing next frame
+      await Future.delayed(const Duration(milliseconds: 400));
+      _isAnalyzing = false;
+    }
+  }
+
   @override
   void dispose() {
+    _tfliteService.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -166,8 +284,11 @@ class _CameraScreenState extends State<CameraScreen> {
   Future<void> _takePicture() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
     if (_isProcessing) return;
+    if (!_isTomatoLeaf) return; // Block capture when not a tomato leaf
 
     try {
+      // Stop the stream before taking a picture
+      await _stopImageStream();
       await _controller!.setFlashMode(_flashMode);
       final image = await _controller!.takePicture();
       if (mounted) {
@@ -175,6 +296,8 @@ class _CameraScreenState extends State<CameraScreen> {
       }
     } catch (e) {
       print("Error taking picture: $e");
+      // Restart stream if capture fails
+      if (mounted) _startImageStream();
     }
   }
 
@@ -211,10 +334,10 @@ class _CameraScreenState extends State<CameraScreen> {
             child: CameraPreview(_controller!),
           ),
 
-          // 2. Square viewfinder overlay with dark edges (Improvement 7)
+          // 2. Square viewfinder overlay with dynamic color
           CustomPaint(
             size: Size.infinite,
-            painter: SquareViewfinderPainter(),
+            painter: SquareViewfinderPainter(cornerColor: _viewfinderColor),
           ),
 
           // 3. Processing overlay
@@ -254,9 +377,9 @@ class _CameraScreenState extends State<CameraScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                         decoration: BoxDecoration(
-                          color: modeColor.withOpacity(0.25),
+                          color: modeColor.withAlpha(64),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: modeColor.withOpacity(0.5)),
+                          border: Border.all(color: modeColor.withAlpha(128)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -285,34 +408,91 @@ class _CameraScreenState extends State<CameraScreen> {
 
                 const Spacer(),
 
-                // Tip Box
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 40),
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(8),
+                // Detection status label
+                if (_detectionLabel.isNotEmpty)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    margin: const EdgeInsets.symmetric(horizontal: 40),
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
+                    decoration: BoxDecoration(
+                      color: _isTomatoLeaf
+                          ? const Color(0xFF4CAF50).withAlpha(50)
+                          : const Color(0xFFE53935).withAlpha(50),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _isTomatoLeaf
+                            ? const Color(0xFF4CAF50).withAlpha(100)
+                            : const Color(0xFFE53935).withAlpha(100),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _isTomatoLeaf ? Icons.check_circle : Icons.warning_rounded,
+                          color: _isTomatoLeaf
+                              ? const Color(0xFF4CAF50)
+                              : const Color(0xFFE53935),
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _isTomatoLeaf
+                                    ? "Tomato leaf detected"
+                                    : "Not a tomato leaf",
+                                style: GoogleFonts.spaceGrotesk(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (!_isTomatoLeaf)
+                                Text(
+                                  "Reposition to scan a tomato leaf",
+                                  style: GoogleFonts.spaceGrotesk(
+                                    color: Colors.white70,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                       Container(
-                         width: 40, height: 40,
-                         decoration: BoxDecoration(
-                           borderRadius: BorderRadius.circular(8),
-                           color: const Color(0xFF13EC13).withAlpha(50),
+
+                // Tip Box (shown when no detection yet)
+                if (_detectionLabel.isEmpty)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 40),
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                         Container(
+                           width: 40, height: 40,
+                           decoration: BoxDecoration(
+                             borderRadius: BorderRadius.circular(8),
+                             color: const Color(0xFF13EC13).withAlpha(50),
+                           ),
+                           child: const Icon(Icons.eco, color: Color(0xFF13EC13)),
                          ),
-                         child: const Icon(Icons.eco, color: Color(0xFF13EC13)),
-                       ),
-                       const SizedBox(width: 15),
-                       Expanded(
-                         child: Text(
-                           "Position the tomato leaf inside the box",
-                           style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 13),
-                         ),
-                       )
-                    ],
+                         const SizedBox(width: 15),
+                         Expanded(
+                           child: Text(
+                             "Position the tomato leaf inside the box",
+                             style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 13),
+                           ),
+                         )
+                      ],
+                    ),
                   ),
-                ),
 
                 const SizedBox(height: 30),
 
@@ -334,21 +514,26 @@ class _CameraScreenState extends State<CameraScreen> {
                         ),
                       ),
 
+                      // Shutter button — disabled (dimmed) when not a tomato leaf
                       GestureDetector(
-                        onTap: _takePicture,
-                        child: Container(
+                        onTap: _isTomatoLeaf ? _takePicture : null,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
                           width: 80,
                           height: 80,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 4),
-                            color: Colors.white,
+                            border: Border.all(
+                              color: _isTomatoLeaf ? Colors.white : Colors.white38,
+                              width: 4,
+                            ),
+                            color: _isTomatoLeaf ? Colors.white : Colors.white24,
                           ),
                           child: Container(
                             margin: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
+                            decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.white,
+                              color: _isTomatoLeaf ? Colors.white : Colors.white24,
                             ),
                           ),
                         ),
@@ -370,9 +555,111 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 }
 
+/// Convert a CameraImage (YUV420 or BGRA) to RGBA bytes.
+/// Runs on a background isolate via [compute] to avoid UI jank.
+Uint8List? _convertCameraImage(_CameraImageData data) {
+  final int width = data.width;
+  final int height = data.height;
+
+  try {
+    if (data.formatGroupRaw == ImageFormatGroup.yuv420.index &&
+        data.planes.length >= 3) {
+      // YUV420 → RGBA (Android)
+      final yPlane = data.planes[0];
+      final uPlane = data.planes[1];
+      final vPlane = data.planes[2];
+
+      final rgba = Uint8List(width * height * 4);
+
+      for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+          final int yIndex = y * yPlane.bytesPerRow + x;
+          final int uvIndex = (y ~/ 2) * uPlane.bytesPerRow +
+              (x ~/ 2) * (uPlane.bytesPerPixel ?? 1);
+
+          final int yVal = yPlane.bytes[yIndex];
+          final int uVal = uvIndex < uPlane.bytes.length
+              ? uPlane.bytes[uvIndex]
+              : 128;
+          final int vVal = uvIndex < vPlane.bytes.length
+              ? vPlane.bytes[uvIndex]
+              : 128;
+
+          // YUV to RGB conversion
+          int r = (yVal + 1.370705 * (vVal - 128)).round().clamp(0, 255);
+          int g = (yVal - 0.337633 * (uVal - 128) - 0.698001 * (vVal - 128))
+              .round()
+              .clamp(0, 255);
+          int b = (yVal + 1.732446 * (uVal - 128)).round().clamp(0, 255);
+
+          final int rgbaIdx = (y * width + x) * 4;
+          rgba[rgbaIdx] = r;
+          rgba[rgbaIdx + 1] = g;
+          rgba[rgbaIdx + 2] = b;
+          rgba[rgbaIdx + 3] = 255;
+        }
+      }
+      return rgba;
+    } else if (data.planes.length == 1) {
+      // BGRA → RGBA (iOS)
+      final plane = data.planes[0];
+      final rgba = Uint8List(width * height * 4);
+
+      for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+          final int srcIdx = y * plane.bytesPerRow + x * 4;
+          final int dstIdx = (y * width + x) * 4;
+
+          if (srcIdx + 3 < plane.bytes.length) {
+            rgba[dstIdx] = plane.bytes[srcIdx + 2];     // R (from BGRA)
+            rgba[dstIdx + 1] = plane.bytes[srcIdx + 1]; // G
+            rgba[dstIdx + 2] = plane.bytes[srcIdx];     // B
+            rgba[dstIdx + 3] = 255;
+          }
+        }
+      }
+      return rgba;
+    }
+  } catch (e) {
+    // Return null on error — the frame will be skipped
+  }
+  return null;
+}
+
+/// Data classes for passing camera image data to isolate via [compute].
+class _CameraImageData {
+  final List<_PlaneData> planes;
+  final int width;
+  final int height;
+  final int formatGroupRaw;
+
+  _CameraImageData({
+    required this.planes,
+    required this.width,
+    required this.height,
+    required this.formatGroupRaw,
+  });
+}
+
+class _PlaneData {
+  final Uint8List bytes;
+  final int bytesPerRow;
+  final int? bytesPerPixel;
+
+  _PlaneData({
+    required this.bytes,
+    required this.bytesPerRow,
+    this.bytesPerPixel,
+  });
+}
+
 /// Custom painter that draws a centered square viewfinder with a dark
-/// semi-transparent overlay outside the box and green rounded corners.
+/// semi-transparent overlay outside the box and colored rounded corners.
 class SquareViewfinderPainter extends CustomPainter {
+  final Color cornerColor;
+
+  SquareViewfinderPainter({this.cornerColor = const Color(0xFF4CAF50)});
+
   @override
   void paint(Canvas canvas, Size size) {
     // Calculate the centered square box (80% of screen width)
@@ -383,7 +670,7 @@ class SquareViewfinderPainter extends CustomPainter {
 
     // Draw the dark overlay outside the box
     final overlayPaint = Paint()
-      ..color = Colors.black.withOpacity(0.60)
+      ..color = Colors.black.withAlpha(153) // 0.60 opacity
       ..style = PaintingStyle.fill;
 
     // Create a path covering everything except the box
@@ -394,15 +681,15 @@ class SquareViewfinderPainter extends CustomPainter {
 
     canvas.drawPath(overlayPath, overlayPaint);
 
-    // Draw the green rounded corner brackets
+    // Draw the colored rounded corner brackets
     final cornerPaint = Paint()
-      ..color = const Color(0xFF4CAF50)
+      ..color = cornerColor
       ..strokeWidth = 4.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    final double cornerLength = 40.0;
-    final double r = 16.0; // corner radius
+    const double cornerLength = 40.0;
+    const double r = 16.0; // corner radius
 
     // Top Left
     final topLeftPath = Path()
@@ -438,5 +725,6 @@ class SquareViewfinderPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant SquareViewfinderPainter oldDelegate) =>
+      oldDelegate.cornerColor != cornerColor;
 }

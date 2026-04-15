@@ -4,6 +4,3 @@ httpx
 python-dotenv
 apscheduler
 firebase-admin
-numpy
-Pillow
-tensorflow

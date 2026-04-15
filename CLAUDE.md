@@ -4,32 +4,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TomoLeafNet-v1 is a tomato leaf disease detection system using a hybrid CNN-Transformer architecture (MobileNetV3Small + SpatialAttention + TransformerBlock). It classifies leaves into 5 categories: Bacterial_Spot, Early_Blight, Healthy, Late_Blight, Septoria. The project has two main parts: a Python ML training/evaluation pipeline and a Flutter mobile app for on-device inference.
+TomoLeafNet-v1 is a tomato leaf disease detection system using MobileNetV3Large. It classifies leaves into 5 categories: Early_Blight, Healthy, Leaf_Miner, Leaf_Mold, Not_Tomato. The Not_Tomato class is a rejection class using DTD textures to filter non-tomato-leaf images. The project has two main parts: a Python ML training/evaluation pipeline and a Flutter mobile app for on-device inference.
 
 ## Commands
 
-### Python (ML Pipeline)
+### Python (ML Pipeline — v4 Two-Phase Training)
 
 ```bash
 # Setup
 python -m venv venv && venv\Scripts\activate  # Windows
-pip install -r REQUIREMENTS/requirements.txt
+pip install tensorflow scikit-learn matplotlib seaborn
 
-# Train model (outputs to MODEL/ and RESULTS/)
-python SCRIPTS/train.py
+# Step 0: Balance field dataset (augment to 1k/class, split 70/15/15)
+python 0_augment_field_dataset.py
 
-# Test single image (edit IMG_PATH in script first)
-python SCRIPTS/test_image.py
+# Step 1: Phase 1 warm-up on public Kaggle 4-class dataset
+python 1_train_phase1.py
 
-# Grad-CAM visualization (edit IMG_PATH first)
-python SCRIPTS/test_gradcam.py
+# Step 2: Phase 2 fine-tune on field dataset + export TFLite
+python 2_train_phase2.py
 
-# Generate confusion matrix & classification report
-python RESULTS/results.py
+# Step 3: Evaluate on unseen field test set
+python 3_evaluate_metrics.py
+```
 
-# Convert model formats
-python SCRIPTS/convert_model.py                # H5 → Keras
-python SCRIPTS/convert_keras_to_tflite.py      # Keras → TFLite
+### Legacy Scripts (SCRIPTS/ — v3, kept for reference)
+
+```bash
+python SCRIPTS/train.py              # Old v3 5-class training
+python SCRIPTS/test_image.py         # Test single image
+python SCRIPTS/test_gradcam.py       # Grad-CAM visualization
+python RESULTS/results.py            # Confusion matrix & report
 ```
 
 ### Flutter (Mobile App)
@@ -44,12 +49,14 @@ flutter analyze                # Dart static analysis
 
 ## Architecture
 
-### ML Model Pipeline (SCRIPTS/)
+### ML Model Pipeline (Root-level scripts)
 
-- **train.py** — 2-phase training: Phase 1 freezes MobileNetV3Small base (10 epochs, lr=3e-4), Phase 2 fine-tunes last 30 layers (25 epochs, lr=5e-5). Uses heavy data augmentation. Outputs `.keras` and `.tflite` models.
-- **model_utils.py** — Shared utilities including two custom Keras layers: `SpatialAttention` (CBAM-style region attention for spot/lesion detection) and `TransformerBlock` (multi-head self-attention for global structure). Also handles model loading with `custom_objects` registration.
+- **0_augment_field_dataset.py** — Reads raw field images from `DATA-RAW/field/`, augments each class to 1,000 images, splits 70/15/15 into `DATA-SPLIT/target_field/`. Val and test splits contain real images only.
+- **1_train_phase1.py** — Phase 1 warm-up: freezes MobileNetV3Large base, trains on public 5-class dataset (`DATA-SPLIT/public_1k/`, 80/20 split, 15 epochs). Outputs `MODEL/phase1_base.keras`.
+- **2_train_phase2.py** — Phase 2 fine-tuning: 3-stage progressive unfreeze (last 30 → last 60 → all layers) on field dataset with Mixup augmentation, class weights, and cosine LR warmup. Total 85 epochs. Exports `MODEL/tomoleafnet_v4_final.keras` and `MODEL/tomoleafnet_v4.tflite`.
+- **3_evaluate_metrics.py** — Evaluates on unseen field test set. Outputs confusion matrix and per-class accuracy.
 - **Input**: 224×224×3 RGB images. Preprocessing: center crop to square, then resize.
-- **Output**: 5-class softmax. Model sizes: .keras ~11MB, .tflite ~1.5MB.
+- **Output**: 5-class softmax (Early_Blight, Healthy, Leaf_Miner, Leaf_Mold, Not_Tomato).
 
 ### Flutter App (MOBILE_APP/lib/)
 
@@ -58,16 +65,18 @@ flutter analyze                # Dart static analysis
 - **screens/auth/** — Login, Register, Forgot Password screens + AuthWrapper (Firebase Auth state listener).
 - **camera_screen.dart** → **result_screen.dart** — Capture/select image → preprocess (center crop, resize 224×224) → TFLite inference → auto-save scan to Firestore + Cloud Storage → display prediction with disease info and management tips.
 - **history_screen.dart** — Real-time scan history from Firestore with swipe-to-delete and cached image thumbnails.
-- **chat_screen.dart** — Llama 3.1 AI chatbot via FastAPI backend → Groq Cloud. UI title: "Plant AI (Llama 3.1)".
+- **chat_screen.dart** — Llama 3.1 AI chatbot via FastAPI backend → Groq Cloud. UI title: "Tomo — Plant Assistant".
 - **theme_provider.dart** — Dark/light mode via Provider pattern.
 - **weather_service.dart** — Location + weather via Cloud Functions proxy (no API key in app binary).
+- **services/tflite_service.dart** — Loads `tomoleafnet_v4.tflite` and `labels.txt`, runs on-device inference with center-crop preprocessing.
 - **services/chat_service.dart** — HTTP client for Plant AI chat, sends messages to the FastAPI backend which forwards to Groq Cloud (Llama 3.1).
+- **services/diagnose_service.dart** — HTTP client for `/diagnose` endpoint, returns AI-generated treatment steps.
 - **services/** — `AuthService`, `FirestoreService`, `StorageService`, `CloudFunctionsService` (weather only), `ChatService` (Groq via FastAPI).
 - **models/** — `UserModel`, `ScanModel` — Firestore data models with serialization.
 
 ### AI Backend (backend/)
 
-- **main.py** — FastAPI server bridging Flutter ↔ Groq Cloud. Exposes `/chat` (POST), `/health` (GET), and `/` (GET) endpoints. Forwards messages to `llama-3.1-8b-instant` via Groq's OpenAI-compatible REST API at `https://api.groq.com/openai/v1`.
+- **main.py** — FastAPI server bridging Flutter ↔ Groq Cloud. Exposes `/chat` (POST), `/diagnose` (POST), `/health` (GET), and `/` (GET) endpoints. Forwards messages to `llama-3.1-8b-instant` via Groq's OpenAI-compatible REST API at `https://api.groq.com/openai/v1`.
 - **requirements.txt** — Python dependencies: `fastapi`, `uvicorn`, `httpx`, `python-dotenv`.
 - **.env** — Configuration for `GROQ_API_KEY` and `GROQ_MODEL` (default: `gemma2-9b-it`). Gitignored — use `.env.example` as template.
 - **render.yaml** — Render Infrastructure-as-Code config for one-click cloud deployment.
@@ -90,17 +99,24 @@ The mobile application utilizes a highly customized, premium high-fidelity desig
 
 ### Data Layout
 
-- **DATA-SPLIT/** — Training data organized as `train/`, `val/`, `test/` with ~700 images per class.
-- **DATA-LABEL/** — Validation/test dataset organized by disease class folders.
-- **MODEL/** — Trained model files (.keras, .h5, .tflite).
-- **RESULTS/** — Evaluation outputs (confusion matrix, training curves, metrics JSON).
+- **DATA-SPLIT/public_1k/** — Phase 1: Public 5-class dataset (80/20 train/val, 4,000/1,000 images).
+- **DATA-SPLIT/target_field/** — Phase 2: Field dataset (70/15/15 train/val/test, 3,500/750/750 images). Val and test are real images only.
+- **DATA-RAW/field/** — Raw field dataset (5 classes: Early_Blight, Healthy, Leaf_Miner, Leaf_Mold, Not_Tomato). Real farm images + DTD textures for Not_Tomato.
+- **DATA-RAW/public/** — Raw public dataset (5 classes, 1,000 images each). Sourced from Kaggle + DTD textures.
+- **MODEL/** — Trained model files: `phase1_base.keras`, `tomoleafnet_v4_final.keras`, `tomoleafnet_v4.tflite`.
+- **RESULTS/** — Evaluation outputs (confusion matrix, training curves).
 
 ## Key Technical Details
 
-- TensorFlow 2.10.0 is pinned in requirements — custom layers use `tf.keras` APIs.
-- Custom layers (`SpatialAttention`, `TransformerBlock`) must be registered via `custom_objects` when loading models (handled in `model_utils.py`).
-- The TFLite model is quantized for mobile deployment and bundled in `MOBILE_APP/assets/`.
-- Flutter app uses `tflite_flutter` 0.12.0 for on-device inference.
+- The v4 model uses MobileNetV3Large (no custom layers like SpatialAttention/TransformerBlock from v3).
+- **Preprocessing is NOT embedded in the model graph.** MobileNetV3 normalization ([0,255] → [-1,1]) is applied in the dataset pipeline during training and explicitly in Flutter's `tflite_service.dart` (`pixel / 127.5 - 1.0`). This prevents TFLite conversion from silently stripping the preprocessing layer.
+- Two-phase transfer learning: Phase 1 (frozen base on public data, 15 epochs) → Phase 2 (3-stage progressive unfreeze on field data: last 30 → last 60 → all layers, 85 total epochs).
+- Phase 2 uses Mixup augmentation (alpha=0.1), class weights, GaussianNoise(15.0), and cosine LR with warmup. No label smoothing (Mixup already regularizes).
+- CSVLogger writes epoch metrics to `RESULTS/Phase2_History.csv` — survives training crashes.
+- The TFLite model is quantized (DEFAULT optimization) for mobile deployment and bundled in `MOBILE_APP/assets/`. Run `python 3_evaluate_metrics.py` to compare Keras vs TFLite accuracy.
+- Flutter app uses `tflite_flutter` 0.12.0 for on-device inference with top-2 confidence gap check (ambiguous if gap < 0.15).
+- Classes (alphabetical, matching TFLite output index): Early_Blight, Healthy, Leaf_Miner, Leaf_Mold, Not_Tomato.
+- Not_Tomato is a rejection class using DTD texture images to filter non-tomato-leaf inputs.
 - Codemagic CI is configured via `codemagic.yaml` for mobile builds.
 - **Firebase backend** provides auth, Firestore database, Cloud Storage, and Cloud Functions (weather only). See `SETUP.md` for configuration.
 - **Plant AI Chat** uses **Groq Cloud** hosting `llama-3.1-8b-instant`, bridged by a FastAPI server. The `GROQ_API_KEY` is stored only on the server (Render env var or local `.env`) — never shipped in the APK.
@@ -109,7 +125,3 @@ The mobile application utilizes a highly customized, premium high-fidelity desig
 - **No weather API keys in app binary** — OpenWeatherMap key is stored as a Firebase secret and accessed only through the `weatherProxy` Cloud Function.
 - **Offline persistence** is enabled for Firestore — scan history works without connectivity.
 - Firebase config files (`google-services.json`, `GoogleService-Info.plist`, `firebase_options.dart`) are gitignored. New developers must run `flutterfire configure`.
-
-## Known Issues
-
-The model has moderate overfitting (val accuracy ~87% vs train ~94%). Detailed diagnosis and improvement recommendations are documented in `training_diagnosis.md`.

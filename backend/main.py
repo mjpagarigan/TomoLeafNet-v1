@@ -14,12 +14,9 @@ Usage:
 
 import os
 import re
-import io
-import base64
 from contextlib import asynccontextmanager
 
 import httpx
-import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,11 +32,6 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 GOOGLE_TRANSLATE_API_KEY = os.getenv("GOOGLE_TRANSLATE_API_KEY", "")
-
-# GradCAM model (loaded lazily)
-_gradcam_model = None
-_grad_model = None
-MODEL_PATH = os.getenv("KERAS_MODEL_PATH", "tomoleafnet_v4_final.keras")
 
 TOMO_SYSTEM_PROMPT = """You are Tomo, a friendly and knowledgeable agricultural assistant for TomoLeafNet — a tomato leaf disease detection app built for Filipino farmers. You specialize in tomato plant health, leaf disease identification, treatment, and prevention.
 
@@ -85,12 +77,22 @@ Confidence-Aware Rules:
 
 You only discuss topics related to plant health, agriculture, tomato farming, and the TomoLeafNet app. If asked about unrelated topics, politely redirect the conversation back to plant health."""
 
+VALID_DISEASE_CLASSES = {"Early_Blight", "Healthy", "Leaf_Miner", "Leaf_Mold", "Not_Tomato"}
+
 DIAGNOSE_PROMPT_TEMPLATE = (
     "You are a plant disease specialist for tomato crops in the Philippines. "
     "A tomato leaf has been diagnosed with {disease} at {confidence}% confidence. "
     "This is a real farm field diagnosis. Provide a short, practical, step-by-step "
     "treatment guide that a Filipino farmer can follow immediately. "
     "Format as exactly 3 to 5 numbered steps. Keep each step concise and actionable."
+)
+
+DIAGNOSE_LOW_CONFIDENCE_TEMPLATE = (
+    "You are a plant disease specialist for tomato crops in the Philippines. "
+    "A tomato leaf scan returned {disease} but with only {confidence}% confidence "
+    "— this result is uncertain. Provide 3 numbered steps: first acknowledge the "
+    "uncertainty, then suggest how to get a clearer scan, and finally give one "
+    "general preventive measure the farmer can apply regardless of the diagnosis."
 )
 
 # ── Shared HTTP client (reused across requests) ──────────────────────
@@ -182,14 +184,6 @@ class TranslateRequest(BaseModel):
 class TranslateResponse(BaseModel):
     translations: list[str]
 
-
-class GradCamRequest(BaseModel):
-    image_base64: str
-    predicted_class_index: int
-
-
-class GradCamResponse(BaseModel):
-    gradcam_image_base64: str
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -342,11 +336,40 @@ async def diagnose(request: DiagnoseRequest):
 
     client: httpx.AsyncClient = app.state.http_client
 
-    # Build the diagnosis prompt
-    prompt = DIAGNOSE_PROMPT_TEMPLATE.format(
-        disease=request.disease,
-        confidence=round(request.confidence, 1),
-    )
+    # Reject unknown disease classes
+    if request.disease not in VALID_DISEASE_CLASSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown disease class: {request.disease}. "
+                   f"Valid classes: {', '.join(sorted(VALID_DISEASE_CLASSES))}",
+        )
+
+    # Healthy and Not_Tomato don't need treatment
+    if request.disease == "Healthy":
+        return DiagnoseResponse(steps=[
+            "Your plant looks healthy! Continue regular watering and monitoring.",
+            "Inspect leaves weekly for early signs of discoloration or spots.",
+            "Maintain good air circulation between plants to prevent disease.",
+        ])
+
+    if request.disease == "Not_Tomato":
+        return DiagnoseResponse(steps=[
+            "This image does not appear to be a tomato leaf.",
+            "Please retake the photo with a clear view of a tomato leaf.",
+            "Ensure the leaf fills most of the frame with good lighting.",
+        ])
+
+    # Use low-confidence prompt when below 60%
+    if request.confidence < 60.0:
+        prompt = DIAGNOSE_LOW_CONFIDENCE_TEMPLATE.format(
+            disease=request.disease,
+            confidence=round(request.confidence, 1),
+        )
+    else:
+        prompt = DIAGNOSE_PROMPT_TEMPLATE.format(
+            disease=request.disease,
+            confidence=round(request.confidence, 1),
+        )
 
     messages = [
         {"role": "system", "content": "You are a plant disease treatment specialist."},
@@ -480,115 +503,6 @@ async def translate(request: TranslateRequest):
         )
 
 
-@app.post("/gradcam", response_model=GradCamResponse)
-async def gradcam(request: GradCamRequest):
-    """
-    Compute GradCAM heatmap for a given image and predicted class.
-    Returns the heatmap-overlaid image as base64 PNG.
-    """
-    try:
-        import tensorflow as tf
-        from PIL import Image
-
-        global _gradcam_model, _grad_model
-
-        # Lazy-load the Keras model
-        if _gradcam_model is None:
-            if not os.path.exists(MODEL_PATH):
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Model file not found: {MODEL_PATH}",
-                )
-            _gradcam_model = tf.keras.models.load_model(MODEL_PATH)
-
-        if _grad_model is None:
-            # Find the last convolutional layer
-            last_conv_layer = None
-            for layer in reversed(_gradcam_model.layers):
-                if len(layer.output.shape) == 4:  # Conv layer
-                    last_conv_layer = layer
-                    break
-            if last_conv_layer is None:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Could not find a convolutional layer in the model.",
-                )
-            _grad_model = tf.keras.Model(
-                inputs=_gradcam_model.input,
-                outputs=[last_conv_layer.output, _gradcam_model.output],
-            )
-
-        # Decode and preprocess the image
-        img_bytes = base64.b64decode(request.image_base64)
-        pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-
-        # Center crop to square
-        w, h = pil_img.size
-        min_dim = min(w, h)
-        left = (w - min_dim) // 2
-        top = (h - min_dim) // 2
-        pil_img = pil_img.crop((left, top, left + min_dim, top + min_dim))
-        pil_img_resized = pil_img.resize((224, 224), Image.BILINEAR)
-        img_array = np.array(pil_img_resized, dtype=np.float32)
-        img_array = np.expand_dims(img_array, axis=0)  # (1, 224, 224, 3)
-
-        # Compute GradCAM
-        with tf.GradientTape() as tape:
-            last_conv_layer_output, preds = _grad_model(img_array)
-            class_channel = preds[:, request.predicted_class_index]
-
-        grads = tape.gradient(class_channel, last_conv_layer_output)
-        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-
-        heatmap = last_conv_layer_output[0] @ pooled_grads[..., tf.newaxis]
-        heatmap = tf.squeeze(heatmap)
-        heatmap = tf.maximum(heatmap, 0) / (tf.math.reduce_max(heatmap) + 1e-8)
-        heatmap = heatmap.numpy()
-
-        # Resize heatmap to match original image
-        heatmap_resized = np.uint8(255 * heatmap)
-        heatmap_pil = Image.fromarray(heatmap_resized).resize(
-            (224, 224), Image.BILINEAR
-        )
-
-        # Apply colormap (blue -> red)
-        import colorsys
-
-        heatmap_color = np.zeros((224, 224, 3), dtype=np.uint8)
-        heatmap_np = np.array(heatmap_pil, dtype=np.float32) / 255.0
-        for y in range(224):
-            for x in range(224):
-                val = heatmap_np[y, x]
-                # Blue (0.66) -> Red (0.0) HSV mapping
-                hue = 0.66 * (1.0 - val)
-                r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
-                heatmap_color[y, x] = [int(r * 255), int(g * 255), int(b * 255)]
-
-        heatmap_overlay = Image.fromarray(heatmap_color)
-
-        # Blend with original
-        original_resized = pil_img.resize((224, 224), Image.BILINEAR)
-        blended = Image.blend(original_resized, heatmap_overlay, alpha=0.4)
-
-        # Encode to base64 PNG
-        buffer = io.BytesIO()
-        blended.save(buffer, format="PNG")
-        result_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-        return GradCamResponse(gradcam_image_base64=result_base64)
-
-    except HTTPException:
-        raise
-    except ImportError:
-        raise HTTPException(
-            status_code=500,
-            detail="TensorFlow or PIL not available on the server.",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"GradCAM computation error: {str(e)}",
-        )
 
 
 def _build_scan_history_block(scans: list[ScanHistoryItem]) -> str:
@@ -607,16 +521,24 @@ def _build_scan_history_block(scans: list[ScanHistoryItem]) -> str:
     lines = ["--- USER'S RECENT SCAN HISTORY ---"]
     for i, s in enumerate(scans, start=1):
         scan_type_label = s.scanType.strip().capitalize() if s.scanType else "Identify"
+        # Flag unreliable scans so Tomo doesn't treat them as certain
+        reliability = ""
+        if s.confidence < 40:
+            reliability = " [VERY UNRELIABLE — likely incorrect, do not base advice on this]"
+        elif s.confidence < 60:
+            reliability = " [UNCERTAIN — may be incorrect, advise with caution]"
         lines.append(
             f"{i}. Disease: {s.disease} | "
-            f"Confidence: {s.confidence:.1f}% ({s.confidenceLabel}) | "
+            f"Confidence: {s.confidence:.1f}% ({s.confidenceLabel}){reliability} | "
             f"Scanned: {s.timestamp} | "
             f"Type: {scan_type_label}"
         )
     lines.append("----------------------------------")
     lines.append(
         "Use this scan history to give personalized, context-aware advice when the "
-        "user asks about their plants, recent detections, or what to do next."
+        "user asks about their plants, recent detections, or what to do next. "
+        "If a scan is marked UNCERTAIN or VERY UNRELIABLE, do not give definitive "
+        "treatment advice based on it — instead recommend retaking the photo."
     )
     return "\n".join(lines)
 

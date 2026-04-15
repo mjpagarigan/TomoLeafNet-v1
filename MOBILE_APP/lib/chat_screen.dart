@@ -34,11 +34,11 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isTyping = false;
 
   static const List<String> _suggestedQuestions = [
-    "What should I do about my recent Late Blight scan?",
+    "Why are my tomato leaves showing white trails?",
+    "How do I treat Early Blight on my tomato plant?",
+    "What does Leaf Mold look like?",
+    "My plant looks healthy — how do I keep it that way?",
     "My confidence score was low — should I be worried?",
-    "How do I prevent Early Blight from spreading?",
-    "Is it safe to eat tomatoes from a diseased plant?",
-    "What's the best time to apply fungicide?",
   ];
 
   bool get _isAuthenticated => FirebaseAuth.instance.currentUser != null;

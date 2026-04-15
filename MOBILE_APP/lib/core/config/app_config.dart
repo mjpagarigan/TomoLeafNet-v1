@@ -63,7 +63,4 @@ class AppConfig {
 
   // ── Translation endpoint (Improvement 3) ────────────────────────
   static String get translateUrl => '$_baseUrl/translate';
-
-  // ── GradCAM endpoint (Improvement 4) ────────────────────────────
-  static String get gradcamUrl => '$_baseUrl/gradcam';
 }
