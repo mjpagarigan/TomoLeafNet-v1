@@ -1,14 +1,17 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
-import 'identify_result_screen.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'core/services/leaf_detector_service.dart';
 import 'diagnose_result_screen.dart';
-import 'services/tflite_service.dart';
+import 'identify_result_screen.dart';
 import 'main.dart'; // To access global 'cameras' list
 
 class CameraScreen extends StatefulWidget {
@@ -20,45 +23,77 @@ class CameraScreen extends StatefulWidget {
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> {
+class _CameraScreenState extends State<CameraScreen>
+    with WidgetsBindingObserver {
   CameraController? _controller;
   bool _isCameraInitialized = false;
   FlashMode _flashMode = FlashMode.off;
   bool _isProcessing = false;
+  bool _isDetectorReady = false;
+  bool _isProcessingFrame = false;
+  bool _streamRunning = false;
+  bool _isAppActive = true;
+  bool _isFilipino = false;
 
-  // Real-time detection state
-  final TFLiteService _tfliteService = TFLiteService();
-  bool _isModelReady = false;
-  bool _isAnalyzing = false;
-  Color _viewfinderColor = const Color(0xFF4CAF50); // default green
-  String _detectionLabel = "";
-  double _detectionConfidence = 0.0;
-  bool _isTomatoLeaf = true;
-  int _consecutiveNotTomato = 0;
-  int _consecutiveTomato = 0;
-  static const int _debounceCount = 3; // require 3 consecutive same results
+  final LeafDetectorService _leafDetectorService = LeafDetectorService();
+  DetectionResult? _detectionResult;
+  Timer? _detectionTimer;
+  CameraImage? _latestFrame;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadLanguagePreference();
     _initializeCamera();
-    _loadModel();
+    _loadDetectorModel();
   }
 
-  Future<void> _loadModel() async {
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _detectionTimer?.cancel();
+    _leafDetectorService.dispose();
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _isAppActive = true;
+      _maybeStartDetection();
+      return;
+    }
+
+    _isAppActive = false;
+    _stopImageStream();
+  }
+
+  Future<void> _loadLanguagePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+
+    setState(() {
+      _isFilipino = prefs.getBool('preferFilipino') ?? false;
+    });
+  }
+
+  Future<void> _loadDetectorModel() async {
     try {
-      await _tfliteService.loadModel();
-      if (mounted) {
-        setState(() => _isModelReady = true);
-      }
+      await _leafDetectorService.loadModel();
+      if (!mounted) return;
+
+      setState(() => _isDetectorReady = true);
+      _maybeStartDetection();
     } catch (e) {
-      print("TFLite model load error: $e");
+      debugPrint("Leaf detector load error: $e");
     }
   }
 
   Future<void> _initializeCamera() async {
     if (cameras.isEmpty) {
-      print("No cameras found");
+      debugPrint("No cameras found");
       return;
     }
     final camera = cameras.firstWhere(
@@ -80,106 +115,125 @@ class _CameraScreenState extends State<CameraScreen> {
           _flashMode = FlashMode.off;
           _isCameraInitialized = true;
         });
-        _startImageStream();
+        _maybeStartDetection();
       }
     } catch (e) {
-      print("Camera initialization error: $e");
+      debugPrint("Camera initialization error: $e");
     }
   }
 
-  /// Start the camera image stream for real-time leaf detection.
-  void _startImageStream() {
-    if (_controller == null || !_controller!.value.isInitialized) return;
+  Future<void> _maybeStartDetection() async {
+    if (!_isAppActive ||
+        _isProcessing ||
+        !_isDetectorReady ||
+        !_isCameraInitialized ||
+        _controller == null ||
+        !_controller!.value.isInitialized ||
+        _streamRunning) {
+      return;
+    }
 
-    _controller!.startImageStream((CameraImage cameraImage) {
-      if (_isAnalyzing || !_isModelReady || _isProcessing) return;
-      _isAnalyzing = true;
-      _processFrame(cameraImage);
-    });
+    await _startImageStream();
   }
 
-  /// Stop the image stream (before taking a picture or disposing).
+  Future<void> _startImageStream() async {
+    if (_controller == null ||
+        !_controller!.value.isInitialized ||
+        _streamRunning ||
+        _isProcessing) {
+      return;
+    }
+
+    try {
+      await _controller!.startImageStream((CameraImage cameraImage) {
+        if (!_isDetectorReady || _isProcessing || _isProcessingFrame) return;
+
+        _latestFrame = cameraImage;
+        _detectionTimer ??= Timer(
+          const Duration(milliseconds: 300),
+          () {
+            _detectionTimer = null;
+            final frame = _latestFrame;
+            if (frame != null) {
+              _processFrame(frame);
+            }
+          },
+        );
+      });
+      _streamRunning = true;
+    } catch (e) {
+      debugPrint("Image stream start error: $e");
+    }
+  }
+
   Future<void> _stopImageStream() async {
+    _detectionTimer?.cancel();
+    _detectionTimer = null;
+    _latestFrame = null;
+
+    if (!_streamRunning) {
+      return;
+    }
+
     try {
       await _controller?.stopImageStream();
-    } catch (_) {}
-  }
-
-  /// Process a single camera frame for tomato leaf detection.
-  Future<void> _processFrame(CameraImage cameraImage) async {
-    try {
-      // Convert YUV420/BGRA camera image to RGBA bytes on a background isolate
-      final rgbaBytes = await compute(_convertCameraImage, _CameraImageData(
-        planes: cameraImage.planes.map((p) => _PlaneData(
-          bytes: Uint8List.fromList(p.bytes),
-          bytesPerRow: p.bytesPerRow,
-          bytesPerPixel: p.bytesPerPixel,
-        )).toList(),
-        width: cameraImage.width,
-        height: cameraImage.height,
-        formatGroupRaw: cameraImage.format.group.index,
-      ));
-
-      if (rgbaBytes == null || !_isModelReady || !mounted) {
-        _isAnalyzing = false;
-        return;
-      }
-
-      // Run inference on the viewfinder region
-      final result = _tfliteService.runInferenceOnFrame(
-        rgbaBytes,
-        cameraImage.width,
-        cameraImage.height,
-      );
-
-      final isNotTomato = result.label == 'Not_Tomato';
-
-      // Debounce: require consecutive same-class predictions
-      if (isNotTomato) {
-        _consecutiveNotTomato++;
-        _consecutiveTomato = 0;
-      } else {
-        _consecutiveTomato++;
-        _consecutiveNotTomato = 0;
-      }
-
-      if (mounted) {
-        if (_consecutiveNotTomato >= _debounceCount && _isTomatoLeaf) {
-          setState(() {
-            _isTomatoLeaf = false;
-            _viewfinderColor = const Color(0xFFE53935); // red
-            _detectionLabel = "Not a tomato leaf";
-            _detectionConfidence = result.confidence;
-          });
-        } else if (_consecutiveTomato >= _debounceCount && !_isTomatoLeaf) {
-          setState(() {
-            _isTomatoLeaf = true;
-            _viewfinderColor = const Color(0xFF4CAF50); // green
-            _detectionLabel = result.displayName;
-            _detectionConfidence = result.confidence;
-          });
-        } else if (_isTomatoLeaf && _consecutiveTomato >= _debounceCount) {
-          // Update label for current tomato class
-          setState(() {
-            _detectionLabel = result.displayName;
-            _detectionConfidence = result.confidence;
-          });
-        }
-      }
-    } catch (e) {
-      print("Frame processing error: $e");
+    } catch (_) {
+      // Ignore repeated stop requests from lifecycle transitions.
     } finally {
-      // Throttle: wait 400ms before processing next frame
-      await Future.delayed(const Duration(milliseconds: 400));
-      _isAnalyzing = false;
+      _streamRunning = false;
     }
   }
 
-  @override
-  void dispose() {
-    _tfliteService.dispose();
-    _controller?.dispose();
-    super.dispose();
+  Future<void> _processFrame(CameraImage cameraImage) async {
+    if (_isProcessingFrame || !_isDetectorReady || !_isAppActive) {
+      return;
+    }
+
+    _isProcessingFrame = true;
+    try {
+      final result = await _leafDetectorService.detect(cameraImage);
+      if (!mounted || _isProcessing) return;
+
+      setState(() {
+        _detectionResult = result;
+      });
+    } catch (e) {
+      debugPrint("Frame processing error: $e");
+    } finally {
+      _isProcessingFrame = false;
+    }
+  }
+
+  bool get _isTomatoLeafDetected => _detectionResult?.isTomatoLeaf ?? false;
+
+  Color get _viewfinderColor =>
+      _isTomatoLeafDetected ? const Color(0xFF4CAF50) : const Color(0xFFE53935);
+
+  String get _statusTitle {
+    if (_isTomatoLeafDetected) {
+      return _isFilipino
+          ? "Natukoy ang dahon ng kamatis!"
+          : "Tomato leaf detected!";
+    }
+
+    return _isFilipino
+        ? "Ituro ang kamera sa dahon ng kamatis."
+        : "Point the camera at a tomato leaf.";
+  }
+
+  String get _statusSubtitle {
+    if (_isTomatoLeafDetected) {
+      final confidence = _detectionResult == null
+          ? ""
+          : " ${( _detectionResult!.confidence * 100).toStringAsFixed(1)}%";
+      return _isFilipino
+          ? "Handa nang kumuha.$confidence"
+          : "Ready to capture.$confidence";
+    }
+
+    return _isFilipino
+        ? "Tagapagpahiwatig lamang ito. Maaari ka pa ring kumuha ng larawan."
+        : "This is only an indicator. You can still capture a photo.";
   }
 
   void _toggleFlash() async {
@@ -206,7 +260,7 @@ class _CameraScreenState extends State<CameraScreen> {
         setState(() => _flashMode = next);
       }
     } catch (e) {
-      print("Flash mode error: $e");
+      debugPrint("Flash mode error: $e");
     }
   }
 
@@ -223,51 +277,25 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  /// Crop an image file to a square centered region, then navigate to result.
-  Future<void> _cropAndNavigate(String imagePath) async {
-    if (_isProcessing) return;
-    setState(() => _isProcessing = true);
-
+  Future<String> _cropToSquare(String imagePath) async {
     try {
       final bytes = await File(imagePath).readAsBytes();
-      final decoded = img.decodeImage(bytes);
-      if (decoded == null) {
-        _navigateToResult(imagePath);
-        return;
-      }
-
-      final int minDim = decoded.width < decoded.height
-          ? decoded.width
-          : decoded.height;
-      final int cropX = (decoded.width - minDim) ~/ 2;
-      final int cropY = (decoded.height - minDim) ~/ 2;
-
-      final cropped = img.copyCrop(
-        decoded,
-        x: cropX,
-        y: cropY,
-        width: minDim,
-        height: minDim,
-      );
-
       final croppedPath = imagePath.replaceAll('.jpg', '_cropped.jpg');
-      final croppedFile = File(croppedPath);
-      await croppedFile.writeAsBytes(img.encodeJpg(cropped, quality: 90));
 
-      if (mounted) {
-        _navigateToResult(croppedPath);
-      }
+      // Run expensive image decode + crop + encode in a background isolate
+      // so the UI thread stays responsive during the transition.
+      final croppedBytes = await compute(_cropToSquareIsolate, bytes);
+      if (croppedBytes == null) return imagePath;
+
+      await File(croppedPath).writeAsBytes(croppedBytes);
+      return croppedPath;
     } catch (e) {
-      print("Crop error: $e, falling back to original");
-      if (mounted) {
-        _navigateToResult(imagePath);
-      }
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      debugPrint("Crop error: $e, falling back to original");
+      return imagePath;
     }
   }
 
-  void _navigateToResult(String imagePath) {
+  Future<void> _navigateToResult(String imagePath) async {
     final Widget resultScreen;
     if (widget.scanType == 'diagnose') {
       resultScreen = DiagnoseResultScreen(imagePath: imagePath);
@@ -275,38 +303,78 @@ class _CameraScreenState extends State<CameraScreen> {
       resultScreen = IdentifyResultScreen(imagePath: imagePath);
     }
 
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => resultScreen),
     );
+
+    if (mounted) {
+      _maybeStartDetection();
+    }
+  }
+
+  Future<void> _handleCaptureTap() async {
+    if (_isProcessing) return;
+    await _takePicture();
   }
 
   Future<void> _takePicture() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
     if (_isProcessing) return;
-    if (!_isTomatoLeaf) return; // Block capture when not a tomato leaf
+
+    bool navigated = false;
 
     try {
-      // Stop the stream before taking a picture
+      setState(() => _isProcessing = true);
       await _stopImageStream();
       await _controller!.setFlashMode(_flashMode);
       final image = await _controller!.takePicture();
-      if (mounted) {
-        _cropAndNavigate(image.path);
-      }
+      final croppedPath = await _cropToSquare(image.path);
+
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+
+      navigated = true;
+      await _navigateToResult(croppedPath);
     } catch (e) {
-      print("Error taking picture: $e");
-      // Restart stream if capture fails
-      if (mounted) _startImageStream();
+      debugPrint("Error taking picture: $e");
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    } finally {
+      if (!navigated && mounted) {
+        setState(() => _isProcessing = false);
+        _maybeStartDetection();
+      }
     }
   }
 
   Future<void> _pickFromGallery() async {
     if (_isProcessing) return;
+
+    bool navigated = false;
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile != null && mounted) {
-      _cropAndNavigate(pickedFile.path);
+
+    try {
+      setState(() => _isProcessing = true);
+      await _stopImageStream();
+
+      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+      if (pickedFile == null || !mounted) {
+        return;
+      }
+
+      final croppedPath = await _cropToSquare(pickedFile.path);
+      if (!mounted) return;
+
+      setState(() => _isProcessing = false);
+      navigated = true;
+      await _navigateToResult(croppedPath);
+    } finally {
+      if (!navigated && mounted) {
+        setState(() => _isProcessing = false);
+        _maybeStartDetection();
+      }
     }
   }
 
@@ -315,7 +383,7 @@ class _CameraScreenState extends State<CameraScreen> {
     if (!_isCameraInitialized) {
       return const Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF13EC13))),
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF309249))),
       );
     }
 
@@ -351,7 +419,7 @@ class _CameraScreenState extends State<CameraScreen> {
                     const CircularProgressIndicator(color: Color(0xFF4CAF50)),
                     const SizedBox(height: 16),
                     Text(
-                      "Processing...",
+                      _isFilipino ? "Pinoproseso..." : "Processing...",
                       style: GoogleFonts.spaceGrotesk(
                           color: Colors.white, fontSize: 16),
                     ),
@@ -409,90 +477,52 @@ class _CameraScreenState extends State<CameraScreen> {
                 const Spacer(),
 
                 // Detection status label
-                if (_detectionLabel.isNotEmpty)
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    margin: const EdgeInsets.symmetric(horizontal: 40),
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
-                    decoration: BoxDecoration(
-                      color: _isTomatoLeaf
-                          ? const Color(0xFF4CAF50).withAlpha(50)
-                          : const Color(0xFFE53935).withAlpha(50),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _isTomatoLeaf
-                            ? const Color(0xFF4CAF50).withAlpha(100)
-                            : const Color(0xFFE53935).withAlpha(100),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: const EdgeInsets.symmetric(horizontal: 40),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 15),
+                  decoration: BoxDecoration(
+                    color: _viewfinderColor.withAlpha(50),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _viewfinderColor.withAlpha(120)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _isTomatoLeafDetected
+                            ? Icons.check_circle
+                            : Icons.warning_rounded,
+                        color: _viewfinderColor,
+                        size: 24,
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _isTomatoLeaf ? Icons.check_circle : Icons.warning_rounded,
-                          color: _isTomatoLeaf
-                              ? const Color(0xFF4CAF50)
-                              : const Color(0xFFE53935),
-                          size: 24,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _isTomatoLeaf
-                                    ? "Tomato leaf detected"
-                                    : "Not a tomato leaf",
-                                style: GoogleFonts.spaceGrotesk(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _statusTitle,
+                              style: GoogleFonts.spaceGrotesk(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
                               ),
-                              if (!_isTomatoLeaf)
-                                Text(
-                                  "Reposition to scan a tomato leaf",
-                                  style: GoogleFonts.spaceGrotesk(
-                                    color: Colors.white70,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _statusSubtitle,
+                              style: GoogleFonts.spaceGrotesk(
+                                color: Colors.white70,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-
-                // Tip Box (shown when no detection yet)
-                if (_detectionLabel.isEmpty)
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 40),
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                         Container(
-                           width: 40, height: 40,
-                           decoration: BoxDecoration(
-                             borderRadius: BorderRadius.circular(8),
-                             color: const Color(0xFF13EC13).withAlpha(50),
-                           ),
-                           child: const Icon(Icons.eco, color: Color(0xFF13EC13)),
-                         ),
-                         const SizedBox(width: 15),
-                         Expanded(
-                           child: Text(
-                             "Position the tomato leaf inside the box",
-                             style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 13),
-                           ),
-                         )
-                      ],
-                    ),
-                  ),
+                ),
 
                 const SizedBox(height: 30),
 
@@ -514,27 +544,20 @@ class _CameraScreenState extends State<CameraScreen> {
                         ),
                       ),
 
-                      // Shutter button — disabled (dimmed) when not a tomato leaf
                       GestureDetector(
-                        onTap: _isTomatoLeaf ? _takePicture : null,
+                        onTap: _handleCaptureTap,
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
                           width: 80,
                           height: 80,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            border: Border.all(
-                              color: _isTomatoLeaf ? Colors.white : Colors.white38,
-                              width: 4,
-                            ),
-                            color: _isTomatoLeaf ? Colors.white : Colors.white24,
+                            color: const Color(0xFF309249),
                           ),
-                          child: Container(
-                            margin: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _isTomatoLeaf ? Colors.white : Colors.white24,
-                            ),
+                          child: const Icon(
+                            Icons.camera_alt,
+                            color: Colors.white,
+                            size: 32,
                           ),
                         ),
                       ),
@@ -555,104 +578,6 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 }
 
-/// Convert a CameraImage (YUV420 or BGRA) to RGBA bytes.
-/// Runs on a background isolate via [compute] to avoid UI jank.
-Uint8List? _convertCameraImage(_CameraImageData data) {
-  final int width = data.width;
-  final int height = data.height;
-
-  try {
-    if (data.formatGroupRaw == ImageFormatGroup.yuv420.index &&
-        data.planes.length >= 3) {
-      // YUV420 → RGBA (Android)
-      final yPlane = data.planes[0];
-      final uPlane = data.planes[1];
-      final vPlane = data.planes[2];
-
-      final rgba = Uint8List(width * height * 4);
-
-      for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-          final int yIndex = y * yPlane.bytesPerRow + x;
-          final int uvIndex = (y ~/ 2) * uPlane.bytesPerRow +
-              (x ~/ 2) * (uPlane.bytesPerPixel ?? 1);
-
-          final int yVal = yPlane.bytes[yIndex];
-          final int uVal = uvIndex < uPlane.bytes.length
-              ? uPlane.bytes[uvIndex]
-              : 128;
-          final int vVal = uvIndex < vPlane.bytes.length
-              ? vPlane.bytes[uvIndex]
-              : 128;
-
-          // YUV to RGB conversion
-          int r = (yVal + 1.370705 * (vVal - 128)).round().clamp(0, 255);
-          int g = (yVal - 0.337633 * (uVal - 128) - 0.698001 * (vVal - 128))
-              .round()
-              .clamp(0, 255);
-          int b = (yVal + 1.732446 * (uVal - 128)).round().clamp(0, 255);
-
-          final int rgbaIdx = (y * width + x) * 4;
-          rgba[rgbaIdx] = r;
-          rgba[rgbaIdx + 1] = g;
-          rgba[rgbaIdx + 2] = b;
-          rgba[rgbaIdx + 3] = 255;
-        }
-      }
-      return rgba;
-    } else if (data.planes.length == 1) {
-      // BGRA → RGBA (iOS)
-      final plane = data.planes[0];
-      final rgba = Uint8List(width * height * 4);
-
-      for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-          final int srcIdx = y * plane.bytesPerRow + x * 4;
-          final int dstIdx = (y * width + x) * 4;
-
-          if (srcIdx + 3 < plane.bytes.length) {
-            rgba[dstIdx] = plane.bytes[srcIdx + 2];     // R (from BGRA)
-            rgba[dstIdx + 1] = plane.bytes[srcIdx + 1]; // G
-            rgba[dstIdx + 2] = plane.bytes[srcIdx];     // B
-            rgba[dstIdx + 3] = 255;
-          }
-        }
-      }
-      return rgba;
-    }
-  } catch (e) {
-    // Return null on error — the frame will be skipped
-  }
-  return null;
-}
-
-/// Data classes for passing camera image data to isolate via [compute].
-class _CameraImageData {
-  final List<_PlaneData> planes;
-  final int width;
-  final int height;
-  final int formatGroupRaw;
-
-  _CameraImageData({
-    required this.planes,
-    required this.width,
-    required this.height,
-    required this.formatGroupRaw,
-  });
-}
-
-class _PlaneData {
-  final Uint8List bytes;
-  final int bytesPerRow;
-  final int? bytesPerPixel;
-
-  _PlaneData({
-    required this.bytes,
-    required this.bytesPerRow,
-    this.bytesPerPixel,
-  });
-}
-
 /// Custom painter that draws a centered square viewfinder with a dark
 /// semi-transparent overlay outside the box and colored rounded corners.
 class SquareViewfinderPainter extends CustomPainter {
@@ -662,10 +587,10 @@ class SquareViewfinderPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Calculate the centered square box (80% of screen width)
-    final double boxSize = size.width * 0.80;
+    final double boxSize = size.width * LeafDetectorService.viewfinderFraction;
     final double left = (size.width - boxSize) / 2;
-    final double top = (size.height - boxSize) / 2 - 40;
+    final double top =
+        (size.height - boxSize) / 2 - LeafDetectorService.viewfinderVerticalOffset;
     final Rect boxRect = Rect.fromLTWH(left, top, boxSize, boxSize);
 
     // Draw the dark overlay outside the box
@@ -727,4 +652,26 @@ class SquareViewfinderPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant SquareViewfinderPainter oldDelegate) =>
       oldDelegate.cornerColor != cornerColor;
+}
+
+/// Top-level function for compute() — runs image crop in a background isolate.
+/// Decodes JPEG bytes, center-crops to square, re-encodes at quality 90.
+Uint8List? _cropToSquareIsolate(Uint8List bytes) {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return null;
+
+  final int minDim =
+      decoded.width < decoded.height ? decoded.width : decoded.height;
+  final int cropX = (decoded.width - minDim) ~/ 2;
+  final int cropY = (decoded.height - minDim) ~/ 2;
+
+  final cropped = img.copyCrop(
+    decoded,
+    x: cropX,
+    y: cropY,
+    width: minDim,
+    height: minDim,
+  );
+
+  return Uint8List.fromList(img.encodeJpg(cropped, quality: 90));
 }

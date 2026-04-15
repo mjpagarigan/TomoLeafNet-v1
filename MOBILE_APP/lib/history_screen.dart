@@ -482,7 +482,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final baseName = _getDisplayName(scan.predictedDisease);
     final displayName =
         diseaseNumber != null ? '$baseName #$diseaseNumber' : baseName;
-    final dateStr = DateFormat('MMM d, yyyy  h:mm a').format(scan.timestamp);
+    final dateStr = DateFormat('MMM d, yyyy h:mm a').format(scan.timestamp);
     final isIdentify = scan.scanType == 'identify';
     final isDiagnose = scan.scanType == 'diagnose';
     final isSelected = _selectedScanIds.contains(scan.scanId);
@@ -595,7 +595,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     children: [
                       Row(
                         children: [
-                          Flexible(
+                          Expanded(
                             child: Text(
                               displayName,
                               style: GoogleFonts.spaceGrotesk(
@@ -604,8 +604,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 color:
                                     isDark ? Colors.white : Colors.black87,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              maxLines: 2,
+                              overflow: TextOverflow.fade,
                             ),
                           ),
                           const SizedBox(width: 6),
@@ -627,29 +627,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           color: Colors.grey[500],
                           fontSize: 12,
                         ),
+                        maxLines: 2,
                       ),
                     ],
-                  ),
-                ),
-                // Confidence badge
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _getConfidenceBadgeColor(
-                        scan.confidenceScore, isDark),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    scan.confidenceLabel.isNotEmpty
-                        ? scan.confidenceLabel
-                        : '${(scan.confidenceScore * 100).toInt()}%',
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: _getConfidenceTextColor(
-                          scan.confidenceScore),
-                    ),
                   ),
                 ),
                 // 3-dot menu (Improvement 5)
@@ -680,6 +660,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           : Colors.grey),
                   icon: isDiagnose ? Icons.healing : null,
                   isDark: isDark,
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _getConfidenceBadgeColor(
+                        scan.confidenceScore, isDark),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    scan.confidenceLabel.isNotEmpty
+                        ? scan.confidenceLabel
+                        : '${(scan.confidenceScore * 100).toInt()}%',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: _getConfidenceTextColor(
+                          scan.confidenceScore),
+                    ),
+                  ),
                 ),
                 const Spacer(),
                 if (isDiagnose &&

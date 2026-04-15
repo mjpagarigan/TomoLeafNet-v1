@@ -14,7 +14,9 @@ import 'history_screen.dart';
 import 'screens/auth/auth_wrapper.dart';
 import 'screens/reminders_screen.dart';
 import 'services/fcm_service.dart';
+import 'services/community_contribution_service.dart';
 import 'services/local_notification_service.dart';
+import 'services/tflite_service.dart';
 import 'widgets/onboarding_tutorial.dart';
 
 List<CameraDescription> cameras = [];
@@ -40,12 +42,17 @@ Future<void> main() async {
     navigator?.push(MaterialPageRoute(builder: (_) => const RemindersScreen()));
   };
   await FcmService.instance.init();
+  await CommunityContributionService.instance.initialize();
 
   try {
     cameras = await availableCameras();
   } on CameraException catch (e) {
     print('Error: $e.code\nError Message: $e.message');
   }
+
+  // Pre-load TFLite models at startup so the first scan doesn't stall.
+  // Singleton — loaded once, shared across all result screens.
+  TFLiteService().loadModel();
 
   runApp(
     ChangeNotifierProvider(

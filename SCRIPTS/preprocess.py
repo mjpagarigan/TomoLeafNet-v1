@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 # --- PATHS (relative to project root) ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RAW_DIR = os.path.join(BASE_DIR, 'DATA-LABEL')
+RAW_DIR = os.path.join(BASE_DIR, 'DATA-RAW', 'field')
 OUT_DIR = os.path.join(BASE_DIR, 'DATA-SPLIT')
 IMG_SIZE = (224, 224)
 
@@ -16,13 +16,13 @@ TRAIN_RATIO = 0.70
 VAL_RATIO = 0.15
 # TEST_RATIO = 0.15 (remainder)
 
-# 5 target disease classes
+# 5 target classes
 CLASS_NAMES = [
-    'Bacterial_Spot',
     'Early_Blight',
     'Healthy',
-    'Late_Blight',
-    'Septoria'
+    'Leaf_Miner',
+    'Leaf_Mold',
+    'Not_Tomato'
 ]
 
 # Clean output directory

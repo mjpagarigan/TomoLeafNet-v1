@@ -7,6 +7,7 @@ class UserModel {
   final String? profilePhotoUrl;
   final DateTime registrationDate;
   final String? locationPreference;
+  final bool contributionOptOut;
 
   UserModel({
     required this.uid,
@@ -15,6 +16,7 @@ class UserModel {
     this.profilePhotoUrl,
     required this.registrationDate,
     this.locationPreference,
+    this.contributionOptOut = false,
   });
 
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
@@ -24,8 +26,10 @@ class UserModel {
       name: data['name'] ?? '',
       email: data['email'] ?? '',
       profilePhotoUrl: data['profilePhotoUrl'],
-      registrationDate: (data['registrationDate'] as Timestamp).toDate(),
+      registrationDate:
+          (data['registrationDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
       locationPreference: data['locationPreference'],
+      contributionOptOut: data['contributionOptOut'] ?? false,
     );
   }
 
@@ -36,6 +40,7 @@ class UserModel {
       'profilePhotoUrl': profilePhotoUrl,
       'registrationDate': Timestamp.fromDate(registrationDate),
       'locationPreference': locationPreference,
+      'contributionOptOut': contributionOptOut,
     };
   }
 }

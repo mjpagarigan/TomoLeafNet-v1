@@ -393,8 +393,8 @@ flutter run
 
 5. **Chat** — Send a message in the Chat tab. Verify the response comes from Gemma 4 via the local Ollama backend. Test these messages:
    - "Why are my tomato leaves turning yellow?"
-   - "How do I treat Late Blight?"
-   - "What does Bacterial Spot look like?"
+   - "How do I treat Early Blight?"
+   - "What does Leaf Mold look like?"
 
 6. **Weather** — Verify the home screen loads weather via the Cloud Function proxy.
 

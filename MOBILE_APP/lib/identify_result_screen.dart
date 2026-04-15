@@ -12,10 +12,12 @@ import 'package:http/http.dart' as http;
 import 'diagnose_result_screen.dart';
 import 'models/scan_model.dart';
 import 'services/tflite_service.dart';
+import 'services/community_contribution_service.dart';
 import 'services/diagnose_service.dart';
 import 'services/firestore_service.dart';
 import 'services/storage_service.dart';
 import 'widgets/disease_carousel.dart';
+import 'widgets/scan_rating_section.dart';
 import 'core/config/app_config.dart';
 
 /// Identify Result Screen — disease detection only, no treatment info.
@@ -56,6 +58,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   bool _isSaving = false;
   bool _isSaved = false;
   String? _savedScanId;
+  String? _savedImageUrl;
+  GeoPoint? _savedGpsCoordinates;
 
   // Diagnose This Leaf upgrade state
   bool _isDiagnosing = false;
@@ -76,6 +80,13 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   bool _isFilipino = false;
   bool _isTranslating = false;
   final Map<String, String> _translations = {};
+
+  String? _selectedRating;
+  String? _ratingConfirmationMessage;
+  String? _contributionPromptStatus;
+  bool _isContributionUploading = false;
+  double _contributionProgress = 0.0;
+  String? _contributionStatusMessage;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
@@ -105,7 +116,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
 
   @override
   void dispose() {
-    _tfliteService.dispose();
+    // TFLiteService is a singleton — don't dispose it per screen.
     _fadeController.dispose();
     super.dispose();
   }
@@ -128,8 +139,13 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     );
     _isLoading = false;
     _savedScanId = scan.scanId;
+    _savedImageUrl = scan.imageUrl;
+    _savedGpsCoordinates = scan.gpsCoordinates;
     _isSaved = true;
     _continuedAnyway = true; // History items were already accepted
+    _selectedRating = scan.userRating;
+    _contributionPromptStatus = scan.contributionPromptStatus;
+    _ratingConfirmationMessage = _confirmationMessageFor(scan.userRating);
     _fadeController.forward();
   }
 
@@ -204,8 +220,11 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       final scanId = await _firestoreService.saveScan(
         uid: user.uid,
         predictedDisease: _result!.label,
+        disease2: _result!.secondLabel,
         confidenceScore: _result!.confidence,
+        secondConfidence: _result!.secondConfidence,
         confidenceLabel: _result!.confidenceLabel,
+        thresholdState: _result!.thresholdState,
         scanType: 'identify',
         gpsCoordinates: gpsCoordinates,
       );
@@ -222,6 +241,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         setState(() {
           _isSaved = true;
           _savedScanId = scanId;
+          _savedImageUrl = imageUrl;
+          _savedGpsCoordinates = gpsCoordinates;
         });
       }
     } catch (e) {
@@ -275,8 +296,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       if (!mounted) return;
       setState(() {
         _isDiagnosing = false;
-        _diagnoseError =
-            "Treatment advice unavailable. Please check your connection and try again.";
+        _diagnoseError = e.toString().replaceFirst('Exception: ', '');
       });
     }
   }
@@ -290,8 +310,9 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
           label: _result!.label,
           confidence: _result!.confidence,
           treatmentSteps: steps,
+          scanId: _savedScanId,
           localImagePath: widget.imagePath,
-          remoteImageUrl: widget.historyScan?.imageUrl,
+          remoteImageUrl: _savedImageUrl ?? widget.historyScan?.imageUrl,
           upgradedFromIdentify: true,
         ),
       ),
@@ -405,6 +426,309 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   String _t(String text) {
     if (!_isFilipino) return text;
     return _translations[text] ?? text;
+  }
+
+  bool get _canShowRating {
+    if (_result == null) return false;
+    if (_result!.label == 'Not_Tomato') return false;
+    if (_savedScanId == null) return false;
+    return _result!.thresholdStateNumber >= 6 &&
+        _result!.thresholdStateNumber <= 8;
+  }
+
+  bool get _shouldAskForContribution {
+    if (_result == null) return false;
+    return _selectedRating == 'thumbs_up' &&
+        _contributionPromptStatus == null &&
+        (_result!.thresholdState == 'confidentHealthy' ||
+            _result!.thresholdState == 'confidentDisease' ||
+            _result!.thresholdState == 'likely');
+  }
+
+  Future<void> _handleRating(String rating) async {
+    if (_selectedRating != null || !_canShowRating) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _savedScanId == null) return;
+
+    setState(() {
+      _selectedRating = rating;
+      _ratingConfirmationMessage = _confirmationMessageFor(rating);
+    });
+
+    await _firestoreService.updateScanFeedback(
+      uid: user.uid,
+      scanId: _savedScanId!,
+      userRating: rating,
+    );
+
+    if (!_shouldAskForContribution) return;
+
+    final profile = await _firestoreService.getUserProfile(user.uid);
+    if (profile?.contributionOptOut == true) {
+      setState(() => _contributionPromptStatus = 'opted_out');
+      return;
+    }
+
+    if (!mounted) return;
+    final accepted = await _showContributionPrompt();
+    if (accepted == true) {
+      await _startContributionUpload(user.uid);
+    } else if (accepted == false) {
+      await _firestoreService.updateScanContributionPromptStatus(
+        uid: user.uid,
+        scanId: _savedScanId!,
+        contributionPromptStatus: 'declined',
+      );
+      if (mounted) {
+        setState(() => _contributionPromptStatus = 'declined');
+      }
+    }
+  }
+
+  Future<bool?> _showContributionPrompt() {
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Container(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Help TomoLeafNet get smarter!',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    "Your scan looks great and you confirmed it's accurate.\nWould you like to share this image anonymously to help\ntrain our model and improve results for other farmers?",
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'What we collect:',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...const [
+                    'Your leaf image (anonymous)',
+                    'Detected disease or healthy status',
+                    'Confidence score',
+                    'Threshold state',
+                    'Date and location (region only, not exact GPS)',
+                  ].map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        '• $item',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 13,
+                          height: 1.5,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'We will never collect your name, account details, or exact location. Contributions are stored with an internal owner link only so you can view your stats and request deletion later.',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF309249),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Yes, help improve TomoLeafNet',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(
+                        'No thanks',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _startContributionUpload(String uid) async {
+    if (_result == null || _savedScanId == null) return;
+
+    setState(() {
+      _isContributionUploading = true;
+      _contributionProgress = 0.0;
+      _contributionStatusMessage = null;
+    });
+
+    try {
+      final uploadResult =
+          await CommunityContributionService.instance.contributeScan(
+        ownerUid: uid,
+        scanId: _savedScanId!,
+        predictedDisease: _result!.label,
+        disease2: _result!.secondLabel,
+        topConfidence: _result!.confidence,
+        secondConfidence: _result!.secondConfidence,
+        thresholdState: _result!.thresholdState,
+        localImagePath: widget.imagePath,
+        remoteImageUrl: _savedImageUrl ?? widget.historyScan?.imageUrl,
+        gpsCoordinates: _savedGpsCoordinates ?? widget.historyScan?.gpsCoordinates,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() => _contributionProgress = progress);
+        },
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _isContributionUploading = false;
+        _contributionPromptStatus = 'accepted';
+        _contributionStatusMessage = uploadResult.uploaded
+            ? 'Contribution uploaded! Thank you for helping Filipino farmers. 🌿'
+            : "Upload failed. We'll try again when you're connected.";
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isContributionUploading = false;
+        _contributionStatusMessage =
+            "Upload failed. We'll try again when you're connected.";
+      });
+    }
+  }
+
+  String? _confirmationMessageFor(String? rating) {
+    switch (rating) {
+      case 'thumbs_up':
+        return 'Thanks for the feedback! 🌿';
+      case 'thumbs_down':
+        return "Thanks! We'll work on improving this.";
+      default:
+        return null;
+    }
+  }
+
+  Widget _buildRatingAndContributionSection(bool isDark) {
+    if (!_canShowRating) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      child: Column(
+        children: [
+          ScanRatingSection(
+            selectedRating: _selectedRating,
+            confirmationMessage: _ratingConfirmationMessage,
+            enabled: _savedScanId != null && !_isContributionUploading,
+            onThumbsUp: () => _handleRating('thumbs_up'),
+            onThumbsDown: () => _handleRating('thumbs_down'),
+          ),
+          if (_isContributionUploading || _contributionStatusMessage != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _isContributionUploading
+                      ? const Color(0xFF309249).withOpacity(0.25)
+                      : (_contributionStatusMessage?.startsWith('Contribution uploaded') ??
+                              false)
+                          ? const Color(0xFF309249).withOpacity(0.25)
+                          : Colors.orangeAccent.withOpacity(0.35),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _isContributionUploading
+                        ? 'Uploading your contribution...'
+                        : _contributionStatusMessage!,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  if (_isContributionUploading) ...[
+                    const SizedBox(height: 12),
+                    LinearProgressIndicator(
+                      value: _contributionProgress <= 0
+                          ? null
+                          : _contributionProgress.clamp(0.0, 1.0),
+                      color: const Color(0xFF309249),
+                      backgroundColor: const Color(0xFF309249).withOpacity(0.12),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -666,7 +990,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 opacity: _fadeAnimation,
                 child: Column(
                   children: [
-                    // Confidence strip
+                    // Threshold tier strip (Step 5: Monitor / Step 8: Confident Healthy)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -676,27 +1000,27 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            _getConfidenceIcon(_result!.confidence),
-                            color: TFLiteService.getConfidenceColor(
-                                _result!.confidence),
-                            size: 22,
+                          Text(
+                            TFLiteService.getThresholdIcon(
+                                _result!.label, _result!.confidence),
+                            style: const TextStyle(fontSize: 20),
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            _t(_result!.confidenceLabel),
+                            _t(TFLiteService.getThresholdLabel(
+                                _result!.label, _result!.confidence)),
                             style: GoogleFonts.spaceGrotesk(
                               fontSize: 17,
                               fontWeight: FontWeight.bold,
-                              color: TFLiteService.getConfidenceColor(
-                                  _result!.confidence),
+                              color: TFLiteService.getThresholdColor(
+                                  _result!.label, _result!.confidence),
                             ),
                           ),
                         ],
                       ),
                     ),
 
-                    // Healthy positive message
+                    // Healthy message
                     Padding(
                       padding: const EdgeInsets.all(24),
                       child: Container(
@@ -716,24 +1040,30 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                         ),
                         child: Column(
                           children: [
-                            const Icon(
-                              Icons.check_circle,
-                              color: Color(0xFF4CAF50),
+                            Icon(
+                              _result!.confidence >= 0.80
+                                  ? Icons.check_circle
+                                  : Icons.visibility,
+                              color: TFLiteService.getThresholdColor(
+                                  _result!.label, _result!.confidence),
                               size: 56,
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              _t("Your tomato leaf appears healthy!"),
+                              _t(TFLiteService.getThresholdTitle(
+                                  _result!.label, _result!.confidence)),
                               textAlign: TextAlign.center,
                               style: GoogleFonts.spaceGrotesk(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: const Color(0xFF4CAF50),
+                                color: TFLiteService.getThresholdColor(
+                                    _result!.label, _result!.confidence),
                               ),
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              _t("No disease detected. Keep up your current care routine."),
+                              _t(TFLiteService.getThresholdBody(
+                                  _result!.label, _result!.confidence)),
                               textAlign: TextAlign.center,
                               style: GoogleFonts.spaceGrotesk(
                                 fontSize: 14,
@@ -763,6 +1093,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       ),
                     ),
 
+                    _buildRatingAndContributionSection(isDark),
+
                     // Carousel for Healthy
                     DiseaseCarousel(diseaseLabel: _result!.label),
                     const SizedBox(height: 24),
@@ -779,7 +1111,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 opacity: _fadeAnimation,
                 child: Column(
                   children: [
-                    // Confidence strip
+                    // Threshold tier strip (Step 6: Likely / Step 7: Confirmed)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -789,20 +1121,20 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            _getConfidenceIcon(_result!.confidence),
-                            color: TFLiteService.getConfidenceColor(
-                                _result!.confidence),
-                            size: 22,
+                          Text(
+                            TFLiteService.getThresholdIcon(
+                                _result!.label, _result!.confidence),
+                            style: const TextStyle(fontSize: 20),
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            _t(_result!.confidenceLabel),
+                            _t(TFLiteService.getThresholdTitle(
+                                _result!.label, _result!.confidence)),
                             style: GoogleFonts.spaceGrotesk(
                               fontSize: 17,
                               fontWeight: FontWeight.bold,
-                              color: TFLiteService.getConfidenceColor(
-                                  _result!.confidence),
+                              color: TFLiteService.getThresholdColor(
+                                  _result!.label, _result!.confidence),
                             ),
                           ),
                         ],
@@ -868,6 +1200,47 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               icon: _getConfidenceIcon(_result!.confidence),
                             ),
 
+                            if (_result!.label == 'Early_Blight' || _result!.label == 'Leaf_Miner' || _result!.label == 'Leaf_Mold') ...[
+                              const SizedBox(height: 20),
+                              Divider(color: isDark ? Colors.white24 : Colors.black12),
+                              const SizedBox(height: 16),
+                              Text(
+                                _isFilipino ? "Paglalarawan" : "Description",
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _getDiseaseInfo(_result!.label, _isFilipino)['description']!,
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 14,
+                                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  height: 1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _isFilipino ? "Mga Sintomas" : "Symptoms",
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _getDiseaseInfo(_result!.label, _isFilipino)['symptoms']!,
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 14,
+                                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  height: 1.5,
+                                ),
+                              ),
+                            ],
+
                             // Retake hint for very low confidence
                             if (_result!.confidence < 0.40) ...[
                               const SizedBox(height: 20),
@@ -907,6 +1280,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                         ),
                       ),
                     ),
+
+                    _buildRatingAndContributionSection(isDark),
 
                     // ── Disease Comparison Carousel (Improvement 1) ──
                     DiseaseCarousel(diseaseLabel: _result!.label),
@@ -1441,6 +1816,43 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         ),
       ],
     );
+  }
+
+  Map<String, String> _getDiseaseInfo(String label, bool isFilipino) {
+    switch (label) {
+      case 'Early_Blight':
+        return {
+          'description': isFilipino
+              ? "Isang karaniwang sakit na dala ng fungus na Alternaria solani."
+              : "A common fungal disease caused by Alternaria solani.",
+          'symptoms': isFilipino
+              ? "Maiitim at pabilog na batik sa mga lumang dahon, paninilaw ng paligid ng batik, at maagang pagkalagas ng dahon."
+              : "Dark, concentric rings or bullseye spots on older leaves, yellowing of surrounding tissue, and premature leaf drop."
+        };
+      case 'Leaf_Miner':
+        return {
+          'description': isFilipino
+              ? "Pinsala na dulot ng uod ng insekto na naninirahan at kumakain sa loob ng dahon."
+              : "Damage caused by insect larvae living and feeding inside the leaf tissue.",
+          'symptoms': isFilipino
+              ? "Puti o abuhin na paliku-likong linya o tunnel (mines) sa mga dahon."
+              : "White or grayish winding trails or tunnels (mines) on the leaves."
+        };
+      case 'Leaf_Mold':
+        return {
+          'description': isFilipino
+              ? "Isang sakit na dala ng fungus na Passalora fulva, karaniwan sa mga lugar na mataas ang halumigmig."
+              : "A fungal disease caused by Passalora fulva, common in high humidity.",
+          'symptoms': isFilipino
+              ? "Maputlang berde o dilaw na batik sa ibabaw ng dahon, at may tila pelus na amag na kulay olive-green hanggang kayumanggi sa ilalim."
+              : "Pale green or yellow spots on the upper leaf surface, with olive-green to brown velvety mold on the underside."
+        };
+      default:
+        return {
+          'description': "",
+          'symptoms': ""
+        };
+    }
   }
 
   IconData _getConfidenceIcon(double confidence) {

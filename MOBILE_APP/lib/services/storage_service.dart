@@ -43,4 +43,45 @@ class StorageService {
       if (e.code != 'object-not-found') rethrow;
     }
   }
+
+  /// Upload a contributed dataset image to the shared community dataset path.
+  UploadTask uploadCommunityContributionImage({
+    required String thresholdState,
+    required String diseaseClass,
+    required String contributionId,
+    required String localImagePath,
+  }) {
+    final file = File(localImagePath);
+    final ref = _storage
+        .ref()
+        .child(
+            'community_dataset/$thresholdState/$diseaseClass/$contributionId.jpg');
+
+    final metadata = SettableMetadata(
+      contentType: 'image/jpeg',
+      customMetadata: {
+        'thresholdState': thresholdState,
+        'diseaseClass': diseaseClass,
+        'contributionId': contributionId,
+      },
+    );
+
+    return ref.putFile(file, metadata);
+  }
+
+  Future<String?> tryGetDownloadUrl(String storagePath) async {
+    try {
+      return await _storage.ref().child(storagePath).getDownloadURL();
+    } on FirebaseException {
+      return null;
+    }
+  }
+
+  Future<void> deleteCommunityContributionImage(String imageStoragePath) async {
+    try {
+      await _storage.ref().child(imageStoragePath).delete();
+    } on FirebaseException catch (e) {
+      if (e.code != 'object-not-found') rethrow;
+    }
+  }
 }

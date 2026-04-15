@@ -1,9 +1,59 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can only read and write their own data
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Users can only read and write their own profile and subcollections
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
     match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isOwner(uid);
+    }
+
+    match /community_contributions/{contributionId} {
+      allow create: if isSignedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.userRating == 'thumbs_up'
+        && request.resource.data.isVerified == false
+        && request.resource.data.isApprovedForTraining == false;
+
+      allow read: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'deletionRequested',
+          'deletionRequestedAt'
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /admin_review_queue/{contributionId} {
+      allow create: if isSignedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.reviewStatus == 'pending';
+
+      allow read: if false;
+
+      allow update: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'deletionRequested',
+          'deletionRequestedAt'
+        ]);
+
+      allow delete: if false;
     }
   }
 }

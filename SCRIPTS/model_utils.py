@@ -8,18 +8,18 @@ from tensorflow.keras import layers
 
 # --- PROJECT PATHS ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_PATH_KERAS = os.path.join(BASE_DIR, 'MODEL', 'tomoleafnet_v3_hybrid.keras')
+MODEL_PATH_KERAS = os.path.join(BASE_DIR, 'MODEL', 'tomoleafnet_v4_final.keras')
 MODEL_PATH_H5 = os.path.join(BASE_DIR, 'MODEL', 'tomoleafnet_v3_hybrid.h5')
 # Prefer .keras format (Keras 3 native), fall back to .h5
 MODEL_PATH = MODEL_PATH_KERAS if os.path.exists(MODEL_PATH_KERAS) else MODEL_PATH_H5
-TFLITE_PATH = os.path.join(BASE_DIR, 'MODEL', 'tomoleafnet_v3.tflite')
-DATA_LABEL_DIR = os.path.join(BASE_DIR, 'DATA-LABEL')
+TFLITE_PATH = os.path.join(BASE_DIR, 'MODEL', 'tomoleafnet_v4.tflite')
+DATA_LABEL_DIR = os.path.join(BASE_DIR, 'DATA-RAW', 'field')
 DATA_SPLIT_DIR = os.path.join(BASE_DIR, 'DATA-SPLIT')
 
 # --- CLASS NAMES (alphabetical, matching model output order) ---
 CLASS_NAMES = [
-    "Bacterial_Spot", "Early_Blight",
-    "Healthy", "Late_Blight", "Septoria"
+    "Early_Blight", "Healthy",
+    "Leaf_Miner", "Leaf_Mold", "Not_Tomato"
 ]
 
 # --- CUSTOM LAYERS (required for model loading) ---

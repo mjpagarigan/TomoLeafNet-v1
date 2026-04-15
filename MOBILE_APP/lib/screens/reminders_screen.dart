@@ -763,6 +763,8 @@ Future<void> showReminderEditorSheet({
   required BuildContext context,
   required ReminderCategory category,
   ReminderModel? existing,
+  String? initialPlantName,
+  String? initialPlantImageUrl,
 }) async {
   await showModalBottomSheet(
     context: context,
@@ -771,6 +773,8 @@ Future<void> showReminderEditorSheet({
     builder: (_) => _ReminderEditorSheet(
       category: category,
       existing: existing,
+      initialPlantName: initialPlantName,
+      initialPlantImageUrl: initialPlantImageUrl,
     ),
   );
 }
@@ -778,8 +782,15 @@ Future<void> showReminderEditorSheet({
 class _ReminderEditorSheet extends StatefulWidget {
   final ReminderCategory category;
   final ReminderModel? existing;
+  final String? initialPlantName;
+  final String? initialPlantImageUrl;
 
-  const _ReminderEditorSheet({required this.category, this.existing});
+  const _ReminderEditorSheet({
+    required this.category,
+    this.existing,
+    this.initialPlantName,
+    this.initialPlantImageUrl,
+  });
 
   @override
   State<_ReminderEditorSheet> createState() => _ReminderEditorSheetState();
@@ -802,8 +813,8 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
   void initState() {
     super.initState();
     final e = widget.existing;
-    _plantName = e?.plantName ?? 'Tomato';
-    _plantImageUrl = e?.plantImageUrl;
+    _plantName = e?.plantName ?? widget.initialPlantName ?? 'Tomato';
+    _plantImageUrl = e?.plantImageUrl ?? widget.initialPlantImageUrl;
     _waterAmount = e?.waterAmount ?? '1 cup';
     _repeat = e?.repeat ?? ReminderRepeat.every2Days;
     _startDate = e?.startDate ?? DateTime.now();

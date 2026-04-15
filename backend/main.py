@@ -336,8 +336,11 @@ async def diagnose(request: DiagnoseRequest):
 
     client: httpx.AsyncClient = app.state.http_client
 
+    normalized_disease = request.disease.strip().replace(" ", "_")
+    display_disease = normalized_disease.replace("_", " ")
+
     # Reject unknown disease classes
-    if request.disease not in VALID_DISEASE_CLASSES:
+    if normalized_disease not in VALID_DISEASE_CLASSES:
         raise HTTPException(
             status_code=400,
             detail=f"Unknown disease class: {request.disease}. "
@@ -345,14 +348,14 @@ async def diagnose(request: DiagnoseRequest):
         )
 
     # Healthy and Not_Tomato don't need treatment
-    if request.disease == "Healthy":
+    if normalized_disease == "Healthy":
         return DiagnoseResponse(steps=[
             "Your plant looks healthy! Continue regular watering and monitoring.",
             "Inspect leaves weekly for early signs of discoloration or spots.",
             "Maintain good air circulation between plants to prevent disease.",
         ])
 
-    if request.disease == "Not_Tomato":
+    if normalized_disease == "Not_Tomato":
         return DiagnoseResponse(steps=[
             "This image does not appear to be a tomato leaf.",
             "Please retake the photo with a clear view of a tomato leaf.",
@@ -362,12 +365,12 @@ async def diagnose(request: DiagnoseRequest):
     # Use low-confidence prompt when below 60%
     if request.confidence < 60.0:
         prompt = DIAGNOSE_LOW_CONFIDENCE_TEMPLATE.format(
-            disease=request.disease,
+            disease=display_disease,
             confidence=round(request.confidence, 1),
         )
     else:
         prompt = DIAGNOSE_PROMPT_TEMPLATE.format(
-            disease=request.disease,
+            disease=display_disease,
             confidence=round(request.confidence, 1),
         )
 

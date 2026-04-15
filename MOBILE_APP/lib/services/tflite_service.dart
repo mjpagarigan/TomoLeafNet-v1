@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'dart:ui' show Color;
@@ -10,11 +9,22 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 
 /// Shared TFLite inference service used by both Identify and Diagnose flows.
 ///
-/// Encapsulates model loading, image preprocessing, and inference to avoid
-/// code duplication between the two result screens.
+/// Singleton — models are loaded once and shared across all result screens,
+/// avoiding repeated 3MB+ asset loads every time a scan result is displayed.
 class TFLiteService {
+  // ── Singleton ──────────────────────────────────────────────────────
+  static final TFLiteService _instance = TFLiteService._internal();
+  factory TFLiteService() => _instance;
+  TFLiteService._internal();
+
   Interpreter? _interpreter;
+  Interpreter? _camInterpreter;
   List<String>? _labels;
+
+  /// Output index for predictions [1,5] in the CAM model.
+  int _camPredIndex = 1;
+  /// Output index for CAM maps [1,7,7,5] in the CAM model.
+  int _camMapsIndex = 0;
 
   bool get isReady => _interpreter != null && _labels != null;
   List<String>? get labels => _labels;
@@ -28,6 +38,25 @@ class TFLiteService {
     print("Input shape: ${inputTensor.shape}, type: ${inputTensor.type}");
     print("Output shape: ${outputTensor.shape}, type: ${outputTensor.type}");
 
+    // Load dual-output CAM model for heatmap generation
+    try {
+      _camInterpreter =
+          await Interpreter.fromAsset('assets/tomoleafnet_v4_cam.tflite');
+      // Detect output index mapping (TFLite may reorder outputs)
+      final outputs = _camInterpreter!.getOutputTensors();
+      for (int i = 0; i < outputs.length; i++) {
+        final shape = outputs[i].shape;
+        if (shape.length == 4 && shape[3] == 5) {
+          _camMapsIndex = i;
+        } else if (shape.length == 2 && shape[1] == 5) {
+          _camPredIndex = i;
+        }
+      }
+      print("CAM model loaded: pred=$_camPredIndex, cam=$_camMapsIndex");
+    } catch (e) {
+      print("CAM model not available, falling back to occlusion: $e");
+    }
+
     final labelData = await rootBundle.loadString('assets/labels.txt');
     _labels = labelData.split('\n').where((s) => s.trim().isNotEmpty).toList();
     print("Labels loaded: $_labels");
@@ -35,8 +64,8 @@ class TFLiteService {
 
   /// Preprocess an image file into a Float32List suitable for the model.
   ///
-  /// Applies center-crop + bilinear resize to 224×224, then normalizes
-  /// pixel values to [-1, 1] range matching MobileNetV3 preprocessing.
+  /// Applies center-crop + bilinear resize to 224×224.
+  /// MobileNetV3 handles normalization internally, so raw [0, 255] is passed.
   Future<Float32List> preprocessImage(String imagePath) async {
     final bytes = await File(imagePath).readAsBytes();
 
@@ -83,8 +112,8 @@ class TFLiteService {
               v01 * (1 - xFrac) * yFrac +
               v11 * xFrac * yFrac;
 
-          // MobileNetV3 normalization: [0, 255] -> [-1, 1]
-          inputBuffer[bufIdx++] = value / 127.5 - 1.0;
+          // MobileNetV3 handles normalization internally — pass raw [0, 255]
+          inputBuffer[bufIdx++] = value;
         }
       }
     }
@@ -113,13 +142,16 @@ class TFLiteService {
     double top1Prob = -1.0;
     double top2Prob = -1.0;
     int top1Index = 0;
+    int top2Index = 0;
     for (int i = 0; i < probabilities.length; i++) {
       if (probabilities[i] > top1Prob) {
         top2Prob = top1Prob;
+        top2Index = top1Index;
         top1Prob = probabilities[i];
         top1Index = i;
       } else if (probabilities[i] > top2Prob) {
         top2Prob = probabilities[i];
+        top2Index = i;
       }
     }
 
@@ -130,6 +162,9 @@ class TFLiteService {
       index: top1Index,
       confidence: top1Prob,
       confidenceGap: confidenceGap,
+      secondLabel: _labels![top2Index],
+      secondIndex: top2Index,
+      secondConfidence: top2Prob < 0 ? 0.0 : top2Prob,
     );
   }
 
@@ -174,9 +209,9 @@ class TFLiteService {
         final int pixelIdx = (srcY * width + srcX) * 4;
 
         if (pixelIdx + 2 < rgbaBytes.length) {
-          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx] / 127.5 - 1.0;       // R
-          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx + 1] / 127.5 - 1.0;   // G
-          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx + 2] / 127.5 - 1.0;   // B
+          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx].toDouble();       // R
+          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx + 1].toDouble();   // G
+          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx + 2].toDouble();   // B
         } else {
           inputBuffer[bufIdx++] = 0.0;
           inputBuffer[bufIdx++] = 0.0;
@@ -195,99 +230,115 @@ class TFLiteService {
     return runInference(buffer);
   }
 
-  /// Generate an occlusion sensitivity heatmap for the given image.
+  /// Generate a CAM (Class Activation Map) heatmap for the given image.
   ///
-  /// Divides the 224×224 preprocessed image into a grid, occludes each patch
-  /// with gray, re-runs inference, and measures the confidence drop. Returns
-  /// PNG bytes of the heatmap overlaid on the original image.
+  /// Uses the dual-output CAM model that produces both predictions and a
+  /// [1, 7, 7, 5] CAM tensor in a single forward pass — no extra inferences.
+  /// The 7×7 CAM is bilinearly upscaled to 224×224 and blended with the
+  /// original image. Returns PNG bytes.
   Future<Uint8List> generateHeatmap(String imagePath, int classIndex) async {
     if (!isReady) await loadModel();
 
     final baseBuffer = await preprocessImage(imagePath);
-    final baseResult = runInference(baseBuffer);
-    final baseConfidence = baseResult.confidence;
 
     const int imgSize = 224;
-    const int gridSize = 4; // 4x4 grid = 16 inferences (fast)
-    const int patchSize = imgSize ~/ gridSize; // 56
+    const int camSize = 7;
+    const int numClasses = 5;
 
-    // Compute importance for each grid cell, yielding to UI between rows
-    final importance = List.generate(gridSize, (_) => List.filled(gridSize, 0.0));
-
-    for (int gy = 0; gy < gridSize; gy++) {
-      for (int gx = 0; gx < gridSize; gx++) {
-        final occluded = Float32List.fromList(baseBuffer);
-        final yStart = gy * patchSize;
-        final xStart = gx * patchSize;
-
-        for (int y = yStart; y < math.min(yStart + patchSize, imgSize); y++) {
-          for (int x = xStart; x < math.min(xStart + patchSize, imgSize); x++) {
-            final idx = (y * imgSize + x) * 3;
-            occluded[idx] = 0.0;     // Gray in [-1, 1] normalized space
-            occluded[idx + 1] = 0.0;
-            occluded[idx + 2] = 0.0;
-          }
-        }
-
-        final result = runInference(occluded);
-        final drop = baseConfidence - result.confidence;
-        importance[gy][gx] = drop.clamp(0.0, 1.0);
-      }
-      // Yield to the UI thread after each row so the spinner stays smooth
-      await Future.delayed(Duration.zero);
+    // ── Run CAM model (single inference) ─────────────────────────────
+    if (_camInterpreter == null) {
+      throw Exception("CAM model not loaded");
     }
 
-    // Normalize importance to [0, 1]
-    double maxImp = 0.0;
-    for (final row in importance) {
+    final input = baseBuffer.reshape([1, imgSize, imgSize, 3]);
+
+    // Allocate output buffers for both outputs
+    final predOutput = List.filled(1 * numClasses, 0.0).reshape([1, numClasses]);
+    final camOutput = List.generate(
+      1,
+      (_) => List.generate(
+        camSize,
+        (_) => List.generate(camSize, (_) => List.filled(numClasses, 0.0)),
+      ),
+    );
+
+    final outputs = <int, Object>{};
+    outputs[_camPredIndex] = predOutput;
+    outputs[_camMapsIndex] = camOutput;
+
+    _camInterpreter!.runForMultipleInputs([input], outputs);
+
+    // Extract the 7×7 CAM for the predicted class
+    final preds = predOutput[0] as List<double>;
+    int predClass = classIndex;
+    if (predClass < 0 || predClass >= numClasses) {
+      // Fallback: use argmax of predictions
+      double maxP = -1;
+      for (int i = 0; i < preds.length; i++) {
+        if (preds[i] > maxP) {
+          maxP = preds[i];
+          predClass = i;
+        }
+      }
+    }
+
+    // Extract 7×7 CAM grid for the predicted class
+    final cam7x7 = List.generate(camSize, (y) {
+      return List.generate(camSize, (x) {
+        final double v = camOutput[0][y][x][predClass];
+        return v > 0 ? v : 0.0; // ReLU
+      });
+    });
+
+    // Normalize to [0, 1]
+    double camMax = 0.0;
+    for (final row in cam7x7) {
       for (final v in row) {
-        if (v > maxImp) maxImp = v;
+        if (v > camMax) camMax = v;
       }
     }
-    if (maxImp > 0) {
-      for (int gy = 0; gy < gridSize; gy++) {
-        for (int gx = 0; gx < gridSize; gx++) {
-          importance[gy][gx] /= maxImp;
+    if (camMax > 0) {
+      for (int y = 0; y < camSize; y++) {
+        for (int x = 0; x < camSize; x++) {
+          cam7x7[y][x] /= camMax;
         }
       }
     }
 
-    // Pre-compute the HSV lookup table (256 entries) to avoid per-pixel calls
+    // ── Bilinear upscale 7×7 → 224×224 and blend with original ──────
+    // Pre-compute the HSV lookup table (256 entries)
     final lut = List<List<int>>.generate(256, (i) {
       final val = i / 255.0;
       final hue = 0.66 * (1.0 - val);
       return _hsvToRgb(hue, 1.0, 1.0);
     });
 
-    // Build RGBA pixel buffer: blend original image with heatmap color
     final pixels = Uint8List(imgSize * imgSize * 4);
     for (int y = 0; y < imgSize; y++) {
       for (int x = 0; x < imgSize; x++) {
         final srcIdx = (y * imgSize + x) * 3;
         final dstIdx = (y * imgSize + x) * 4;
 
-        // Bilinear interpolation of the grid importance
-        final gxCenter = (x + 0.5) / patchSize - 0.5;
-        final gyCenter = (y + 0.5) / patchSize - 0.5;
-        final gx0 = gxCenter.floor().clamp(0, gridSize - 1);
-        final gx1 = (gx0 + 1).clamp(0, gridSize - 1);
-        final gy0 = gyCenter.floor().clamp(0, gridSize - 1);
-        final gy1 = (gy0 + 1).clamp(0, gridSize - 1);
+        // Map 224×224 pixel to 7×7 CAM grid with bilinear interpolation
+        final gxCenter = (x + 0.5) * camSize / imgSize - 0.5;
+        final gyCenter = (y + 0.5) * camSize / imgSize - 0.5;
+        final gx0 = gxCenter.floor().clamp(0, camSize - 1);
+        final gx1 = (gx0 + 1).clamp(0, camSize - 1);
+        final gy0 = gyCenter.floor().clamp(0, camSize - 1);
+        final gy1 = (gy0 + 1).clamp(0, camSize - 1);
         final fx = (gxCenter - gx0).clamp(0.0, 1.0);
         final fy = (gyCenter - gy0).clamp(0.0, 1.0);
-        final val = importance[gy0][gx0] * (1 - fx) * (1 - fy) +
-            importance[gy0][gx1] * fx * (1 - fy) +
-            importance[gy1][gx0] * (1 - fx) * fy +
-            importance[gy1][gx1] * fx * fy;
+        final val = cam7x7[gy0][gx0] * (1 - fx) * (1 - fy) +
+            cam7x7[gy0][gx1] * fx * (1 - fy) +
+            cam7x7[gy1][gx0] * (1 - fx) * fy +
+            cam7x7[gy1][gx1] * fx * fy;
 
-        // Use LUT for the colormap
         final lutIdx = (val * 255).round().clamp(0, 255);
         final hsvColor = lut[lutIdx];
 
-        // Convert from [-1, 1] back to [0, 255] for display blending
-        final origR = ((baseBuffer[srcIdx] + 1.0) * 127.5).clamp(0, 255);
-        final origG = ((baseBuffer[srcIdx + 1] + 1.0) * 127.5).clamp(0, 255);
-        final origB = ((baseBuffer[srcIdx + 2] + 1.0) * 127.5).clamp(0, 255);
+        final origR = baseBuffer[srcIdx].clamp(0, 255);
+        final origG = baseBuffer[srcIdx + 1].clamp(0, 255);
+        final origB = baseBuffer[srcIdx + 2].clamp(0, 255);
 
         pixels[dstIdx] = ((origR * 0.6) + (hsvColor[0] * 0.4)).round().clamp(0, 255);
         pixels[dstIdx + 1] = ((origG * 0.6) + (hsvColor[1] * 0.4)).round().clamp(0, 255);
@@ -330,10 +381,12 @@ class TFLiteService {
     return [(r * 255).round(), (g * 255).round(), (b * 255).round()];
   }
 
-  /// Dispose the interpreter.
+  /// Dispose interpreters.
   void dispose() {
     _interpreter?.close();
     _interpreter = null;
+    _camInterpreter?.close();
+    _camInterpreter = null;
   }
 
   // ── Confidence helpers ──────────────────────────────────────────────
@@ -342,7 +395,7 @@ class TFLiteService {
     if (confidence >= 0.80) return "High Confidence";
     if (confidence >= 0.60) return "Moderate Confidence";
     if (confidence >= 0.40) return "Low Confidence";
-    return "Very Low Confidence — Please retake the photo";
+    return "Very Low Confidence";
   }
 
   static Color getConfidenceColor(double confidence) {
@@ -350,6 +403,64 @@ class TFLiteService {
     if (confidence >= 0.60) return const Color(0xFFFF9800);
     if (confidence >= 0.40) return const Color(0xFFFFC107);
     return const Color(0xFFF44336);
+  }
+
+  // ── Threshold tier helpers (PDF steps 5–8) ──────────────────────────
+
+  /// Returns the threshold tier label for the result display header.
+  static String getThresholdLabel(String label, double confidence) {
+    if (label == 'Healthy') {
+      if (confidence >= 0.80) return 'Confident Healthy';
+      return 'Monitor';
+    }
+    // Disease
+    if (confidence >= 0.85) return 'Confirmed';
+    return 'Likely';
+  }
+
+  /// Returns the threshold tier color.
+  static Color getThresholdColor(String label, double confidence) {
+    if (label == 'Healthy') {
+      if (confidence >= 0.80) return const Color(0xFF4CAF50); // green
+      return const Color(0xFFFFC107); // amber
+    }
+    if (confidence >= 0.85) return const Color(0xFFF44336); // red
+    return const Color(0xFFFF9800); // orange
+  }
+
+  /// Returns the threshold tier title text (PDF friendly wording).
+  static String getThresholdTitle(String label, double confidence) {
+    if (label == 'Healthy') {
+      if (confidence >= 0.80) return 'Great news!';
+      return 'Looks okay, but keep watch.';
+    }
+    final name = getDisplayName(label);
+    if (confidence >= 0.85) return 'Confirmed: $name.';
+    return 'Heads up! It might be $name.';
+  }
+
+  /// Returns the threshold tier body text (PDF friendly wording).
+  static String getThresholdBody(String label, double confidence) {
+    if (label == 'Healthy') {
+      if (confidence >= 0.80) {
+        return 'Your tomato leaf appears to be completely healthy. Keep up the great work!';
+      }
+      return 'Your plant seems mostly healthy, but it\'s best to keep monitoring it for the next few days just in case.';
+    }
+    if (confidence >= 0.85) {
+      return 'We are highly confident your plant has this issue. Check out the details and comparison photos below to see if they match your plant.';
+    }
+    return 'We\'re seeing some signs of this issue. Let\'s review the symptoms together to make sure.';
+  }
+
+  /// Returns the threshold tier icon string.
+  static String getThresholdIcon(String label, double confidence) {
+    if (label == 'Healthy') {
+      if (confidence >= 0.80) return '🟢';
+      return '🟡';
+    }
+    if (confidence >= 0.85) return '🔴';
+    return '🟠';
   }
 
   static String getDisplayName(String label) {
@@ -362,6 +473,31 @@ class TFLiteService {
     };
     return names[label] ?? label.replaceAll('_', ' ');
   }
+
+  /// Stable threshold-state identifiers for analytics and contribution routing.
+  static String getThresholdState(String label, double confidence) {
+    if (label == 'Healthy') {
+      return confidence >= 0.80 ? 'confidentHealthy' : 'monitor';
+    }
+    if (label == 'Not_Tomato') return 'rejection';
+    return confidence >= 0.85 ? 'confidentDisease' : 'likely';
+  }
+
+  /// Internal mapping of the app's PDF-inspired threshold states.
+  static int getThresholdStateNumber(String label, double confidence) {
+    switch (getThresholdState(label, confidence)) {
+      case 'likely':
+        return 6;
+      case 'confidentDisease':
+        return 7;
+      case 'confidentHealthy':
+        return 8;
+      case 'monitor':
+        return 5;
+      default:
+        return 0;
+    }
+  }
 }
 
 /// Result of a single TFLite inference run.
@@ -369,6 +505,9 @@ class TFLiteResult {
   final String label;
   final int index;
   final double confidence;
+  final String? secondLabel;
+  final int? secondIndex;
+  final double secondConfidence;
 
   /// Gap between top-1 and top-2 confidence. A small gap (<0.15) means the
   /// model is uncertain even if the absolute confidence is above 60%.
@@ -378,6 +517,9 @@ class TFLiteResult {
     required this.label,
     required this.index,
     required this.confidence,
+    this.secondLabel,
+    this.secondIndex,
+    this.secondConfidence = 0.0,
     this.confidenceGap = 1.0,
   });
 
@@ -389,6 +531,10 @@ class TFLiteResult {
   String get confidenceLabel => TFLiteService.getConfidenceLabel(confidence);
   String get confidencePercent =>
       '${(confidence * 100).toStringAsFixed(1)}%';
+  String get thresholdState =>
+      TFLiteService.getThresholdState(label, confidence);
+  int get thresholdStateNumber =>
+      TFLiteService.getThresholdStateNumber(label, confidence);
 }
 
 /// Helper to await a [ui.Image] from [ui.decodeImageFromPixels].

@@ -75,6 +75,9 @@ dependencies:
   url_launcher: ^6.2.6
   webview_flutter: ^4.7.0
   metadata_fetch: ^0.4.2
+  connectivity_plus: ^7.1.1
+  package_info_plus: ^10.0.0
+  path_provider: ^2.1.5
 
 dependency_overrides:
   camera_avfoundation: 0.9.17+2
@@ -90,6 +93,8 @@ flutter:
   # Assets for TFLite model and labels
   assets:
     - assets/tomoleafnet_v4.tflite
+    - assets/tomoleafnet_v4_cam.tflite
+    - assets/tomoleafnet_detector.tflite
     - assets/labels.txt
     - assets/images/
     - assets/articles/

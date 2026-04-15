@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'community_contribution_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -27,6 +28,7 @@ class AuthService {
     if (user != null) {
       await user.updateDisplayName(name);
       await _createUserProfile(user, name: name);
+      await CommunityContributionService.instance.processPendingQueue();
     }
     return user;
   }
@@ -40,6 +42,7 @@ class AuthService {
       email: email,
       password: password,
     );
+    await CommunityContributionService.instance.processPendingQueue();
     return credential.user;
   }
 
@@ -65,6 +68,7 @@ class AuthService {
         photoUrl: googleUser.photoUrl,
       );
     }
+    await CommunityContributionService.instance.processPendingQueue();
     return user;
   }
 
@@ -91,6 +95,7 @@ class AuthService {
       'profilePhotoUrl': photoUrl ?? user.photoURL,
       'registrationDate': FieldValue.serverTimestamp(),
       'locationPreference': null,
+      'contributionOptOut': false,
     });
   }
 }

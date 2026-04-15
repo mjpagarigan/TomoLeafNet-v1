@@ -11,11 +11,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'models/scan_model.dart';
 import 'services/tflite_service.dart';
+import 'services/community_contribution_service.dart';
 import 'services/diagnose_service.dart';
 import 'services/firestore_service.dart';
 import 'services/storage_service.dart';
 import 'widgets/disease_carousel.dart';
+import 'widgets/scan_rating_section.dart';
 import 'core/config/app_config.dart';
+import 'models/reminder_model.dart';
+import 'screens/reminders_screen.dart';
 
 /// Diagnose Result Screen — disease detection + AI-generated treatment steps.
 ///
@@ -30,6 +34,7 @@ class DiagnoseResultScreen extends StatefulWidget {
   final String? preloadedLabel;
   final double? preloadedConfidence;
   final List<String>? preloadedSteps;
+  final String? preloadedScanId;
   final String? preloadedLocalImagePath;
   final String? preloadedRemoteImageUrl;
   final bool upgradedFromIdentify;
@@ -39,6 +44,7 @@ class DiagnoseResultScreen extends StatefulWidget {
         preloadedLabel = null,
         preloadedConfidence = null,
         preloadedSteps = null,
+        preloadedScanId = null,
         preloadedLocalImagePath = null,
         preloadedRemoteImageUrl = null,
         upgradedFromIdentify = false;
@@ -48,6 +54,7 @@ class DiagnoseResultScreen extends StatefulWidget {
         preloadedLabel = null,
         preloadedConfidence = null,
         preloadedSteps = null,
+        preloadedScanId = null,
         preloadedLocalImagePath = null,
         preloadedRemoteImageUrl = null,
         upgradedFromIdentify = false;
@@ -57,6 +64,7 @@ class DiagnoseResultScreen extends StatefulWidget {
     required String label,
     required double confidence,
     required List<String> treatmentSteps,
+    String? scanId,
     String? localImagePath,
     String? remoteImageUrl,
     this.upgradedFromIdentify = false,
@@ -65,6 +73,7 @@ class DiagnoseResultScreen extends StatefulWidget {
         preloadedLabel = label,
         preloadedConfidence = confidence,
         preloadedSteps = treatmentSteps,
+        preloadedScanId = scanId,
         preloadedLocalImagePath = localImagePath,
         preloadedRemoteImageUrl = remoteImageUrl;
 
@@ -89,6 +98,9 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
 
   bool _isSaving = false;
   bool _isSaved = false;
+  String? _savedScanId;
+  String? _savedImageUrl;
+  GeoPoint? _savedGpsCoordinates;
 
   // Low confidence flow (Improvement 8)
   bool _showLowConfidenceWarning = false;
@@ -103,6 +115,13 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
   bool _isFilipino = false;
   bool _isTranslating = false;
   final Map<String, String> _translations = {};
+
+  String? _selectedRating;
+  String? _ratingConfirmationMessage;
+  String? _contributionPromptStatus;
+  bool _isContributionUploading = false;
+  double _contributionProgress = 0.0;
+  String? _contributionStatusMessage;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
@@ -158,8 +177,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     );
     _treatmentSteps = scan.treatmentSteps;
     _isDetecting = false;
+    _savedScanId = scan.scanId;
+    _savedImageUrl = scan.imageUrl;
+    _savedGpsCoordinates = scan.gpsCoordinates;
     _isSaved = true;
     _continuedAnyway = true;
+    _selectedRating = scan.userRating;
+    _contributionPromptStatus = scan.contributionPromptStatus;
+    _ratingConfirmationMessage = _confirmationMessageFor(scan.userRating);
     _fadeController.forward();
   }
 
@@ -171,6 +196,8 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     );
     _treatmentSteps = widget.preloadedSteps;
     _isDetecting = false;
+    _savedScanId = widget.preloadedScanId;
+    _savedImageUrl = widget.preloadedRemoteImageUrl;
     _isSaved = true;
     _continuedAnyway = true;
     _fadeController.forward();
@@ -235,15 +262,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     } catch (e) {
       if (mounted) {
         setState(() {
-          _treatmentError =
-              "Treatment advice unavailable. Please check your connection and try again.";
+          _treatmentError = e.toString().replaceFirst('Exception: ', '');
           _isLoadingTreatment = false;
         });
       }
     }
   }
 
-  void _onContinueAnyway() {
+  Future<void> _onContinueAnyway() async {
     setState(() {
       _showLowConfidenceWarning = false;
       _continuedAnyway = true;
@@ -251,9 +277,109 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
 
     if (_result != null && _result!.label != 'Healthy') {
       setState(() => _isLoadingTreatment = true);
-      _fetchTreatment(_result!);
+      await _fetchTreatment(_result!);
     }
-    _saveScanToFirebase();
+    await _saveScanToFirebase();
+  }
+
+  String get _reminderPlantName => 'Tomato';
+
+  String? get _reminderPlantImageUrl {
+    if (_isHistory) return widget.historyScan?.imageUrl;
+    return widget.preloadedRemoteImageUrl;
+  }
+
+  Future<void> _showReminderCategorySheet() async {
+    if (FirebaseAuth.instance.currentUser == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please sign in to add reminders.',
+            style: GoogleFonts.spaceGrotesk(),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final categories = [
+      ReminderCategory.watering,
+      ReminderCategory.fertilize,
+      ReminderCategory.checkSoil,
+      ReminderCategory.supportStems,
+      ReminderCategory.other,
+    ];
+
+    final picked = await showModalBottomSheet<ReminderCategory>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _isFilipino ? 'Magdagdag ng Paalala' : 'Add Reminder',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _isFilipino
+                  ? 'Anong uri ng paalala ang gusto mong itakda para sa iyong kamatis?'
+                  : 'Which type of reminder would you like to set for your tomato plant?',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 14,
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...categories.map(
+              (category) => ListTile(
+                onTap: () => Navigator.pop(ctx, category),
+                leading: Icon(category.icon, color: const Color(0xFF309249)),
+                title: Text(
+                  category.label,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                subtitle: Text(
+                  _isFilipino
+                      ? 'Mag-set ng ${category.label.toLowerCase()} na paalala'
+                      : 'Set a ${category.label.toLowerCase()} reminder',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 12,
+                    color: isDark ? Colors.grey[500] : Colors.grey[600],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (picked == null || !mounted) return;
+
+    await showReminderEditorSheet(
+      context: context,
+      category: picked,
+      initialPlantName: _reminderPlantName,
+      initialPlantImageUrl: _reminderPlantImageUrl,
+    );
   }
 
   void _onRetakePhoto() {
@@ -283,8 +409,11 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       final scanId = await _firestoreService.saveScan(
         uid: user.uid,
         predictedDisease: _result!.label,
+        disease2: _result!.secondLabel,
         confidenceScore: _result!.confidence,
+        secondConfidence: _result!.secondConfidence,
         confidenceLabel: _result!.confidenceLabel,
+        thresholdState: _result!.thresholdState,
         scanType: 'diagnose',
         gpsCoordinates: gpsCoordinates,
         treatmentSteps: _treatmentSteps,
@@ -298,7 +427,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
 
       await _firestoreService.updateScanImageUrl(user.uid, scanId, imageUrl);
 
-      if (mounted) setState(() => _isSaved = true);
+      if (mounted) {
+        setState(() {
+          _isSaved = true;
+          _savedScanId = scanId;
+          _savedImageUrl = imageUrl;
+          _savedGpsCoordinates = gpsCoordinates;
+        });
+      }
     } catch (e) {
       print('Error saving scan: $e');
     } finally {
@@ -410,6 +546,311 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
   String _t(String text) {
     if (!_isFilipino) return text;
     return _translations[text] ?? text;
+  }
+
+  bool get _canShowRating {
+    if (_result == null) return false;
+    if (_result!.label == 'Not_Tomato') return false;
+    if (_savedScanId == null) return false;
+    return _result!.thresholdStateNumber >= 6 &&
+        _result!.thresholdStateNumber <= 8;
+  }
+
+  bool get _shouldAskForContribution {
+    if (_result == null) return false;
+    return _selectedRating == 'thumbs_up' &&
+        _contributionPromptStatus == null &&
+        (_result!.thresholdState == 'confidentHealthy' ||
+            _result!.thresholdState == 'confidentDisease' ||
+            _result!.thresholdState == 'likely');
+  }
+
+  Future<void> _handleRating(String rating) async {
+    if (_selectedRating != null || !_canShowRating) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _savedScanId == null) return;
+
+    setState(() {
+      _selectedRating = rating;
+      _ratingConfirmationMessage = _confirmationMessageFor(rating);
+    });
+
+    await _firestoreService.updateScanFeedback(
+      uid: user.uid,
+      scanId: _savedScanId!,
+      userRating: rating,
+    );
+
+    if (!_shouldAskForContribution) return;
+
+    final profile = await _firestoreService.getUserProfile(user.uid);
+    if (profile?.contributionOptOut == true) {
+      setState(() => _contributionPromptStatus = 'opted_out');
+      return;
+    }
+
+    if (!mounted) return;
+    final accepted = await _showContributionPrompt();
+    if (accepted == true) {
+      await _startContributionUpload(user.uid);
+    } else if (accepted == false) {
+      await _firestoreService.updateScanContributionPromptStatus(
+        uid: user.uid,
+        scanId: _savedScanId!,
+        contributionPromptStatus: 'declined',
+      );
+      if (mounted) {
+        setState(() => _contributionPromptStatus = 'declined');
+      }
+    }
+  }
+
+  Future<bool?> _showContributionPrompt() {
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Container(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Help TomoLeafNet get smarter!',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    "Your scan looks great and you confirmed it's accurate.\nWould you like to share this image anonymously to help\ntrain our model and improve results for other farmers?",
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'What we collect:',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...const [
+                    'Your leaf image (anonymous)',
+                    'Detected disease or healthy status',
+                    'Confidence score',
+                    'Threshold state',
+                    'Date and location (region only, not exact GPS)',
+                  ].map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        '• $item',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 13,
+                          height: 1.5,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'We will never collect your name, account details, or exact location. Contributions are stored with an internal owner link only so you can view your stats and request deletion later.',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF309249),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Yes, help improve TomoLeafNet',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(
+                        'No thanks',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _startContributionUpload(String uid) async {
+    if (_result == null || _savedScanId == null) return;
+
+    setState(() {
+      _isContributionUploading = true;
+      _contributionProgress = 0.0;
+      _contributionStatusMessage = null;
+    });
+
+    try {
+      final uploadResult =
+          await CommunityContributionService.instance.contributeScan(
+        ownerUid: uid,
+        scanId: _savedScanId!,
+        predictedDisease: _result!.label,
+        disease2: _result!.secondLabel,
+        topConfidence: _result!.confidence,
+        secondConfidence: _result!.secondConfidence,
+        thresholdState: _result!.thresholdState,
+        localImagePath: widget.imagePath ?? widget.preloadedLocalImagePath,
+        remoteImageUrl: _savedImageUrl ??
+            widget.historyScan?.imageUrl ??
+            widget.preloadedRemoteImageUrl,
+        gpsCoordinates: _savedGpsCoordinates ?? widget.historyScan?.gpsCoordinates,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() => _contributionProgress = progress);
+        },
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _isContributionUploading = false;
+        _contributionPromptStatus = 'accepted';
+        _contributionStatusMessage = uploadResult.uploaded
+            ? 'Contribution uploaded! Thank you for helping Filipino farmers. 🌿'
+            : "Upload failed. We'll try again when you're connected.";
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isContributionUploading = false;
+        _contributionStatusMessage =
+            "Upload failed. We'll try again when you're connected.";
+      });
+    }
+  }
+
+  String? _confirmationMessageFor(String? rating) {
+    switch (rating) {
+      case 'thumbs_up':
+        return 'Thanks for the feedback! 🌿';
+      case 'thumbs_down':
+        return "Thanks! We'll work on improving this.";
+      default:
+        return null;
+    }
+  }
+
+  Widget _buildRatingAndContributionSection(bool isDark) {
+    if (!_canShowRating) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      child: Column(
+        children: [
+          ScanRatingSection(
+            selectedRating: _selectedRating,
+            confirmationMessage: _ratingConfirmationMessage,
+            enabled: _savedScanId != null && !_isContributionUploading,
+            onThumbsUp: () => _handleRating('thumbs_up'),
+            onThumbsDown: () => _handleRating('thumbs_down'),
+          ),
+          if (_isContributionUploading || _contributionStatusMessage != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _isContributionUploading
+                      ? const Color(0xFF309249).withOpacity(0.25)
+                      : (_contributionStatusMessage?.startsWith('Contribution uploaded') ??
+                              false)
+                          ? const Color(0xFF309249).withOpacity(0.25)
+                          : Colors.orangeAccent.withOpacity(0.35),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _isContributionUploading
+                        ? 'Uploading your contribution...'
+                        : _contributionStatusMessage!,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  if (_isContributionUploading) ...[
+                    const SizedBox(height: 12),
+                    LinearProgressIndicator(
+                      value: _contributionProgress <= 0
+                          ? null
+                          : _contributionProgress.clamp(0.0, 1.0),
+                      color: const Color(0xFF309249),
+                      backgroundColor: const Color(0xFF309249).withOpacity(0.12),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   // Healthy care tips
@@ -683,7 +1124,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Confidence strip
+                    // Threshold tier strip (Steps 5-8)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -693,20 +1134,22 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            _getConfidenceIcon(_result!.confidence),
-                            color: TFLiteService.getConfidenceColor(
-                                _result!.confidence),
-                            size: 22,
+                          Text(
+                            TFLiteService.getThresholdIcon(
+                                _result!.label, _result!.confidence),
+                            style: const TextStyle(fontSize: 20),
                           ),
                           const SizedBox(width: 10),
-                          Text(
-                            "${_t(_result!.confidenceLabel)}  \u2022  ${_result!.confidencePercent}",
-                            style: GoogleFonts.spaceGrotesk(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: TFLiteService.getConfidenceColor(
-                                  _result!.confidence),
+                          Flexible(
+                            child: Text(
+                              "${_t(TFLiteService.getThresholdTitle(_result!.label, _result!.confidence))}  \u2022  ${_result!.confidencePercent}",
+                              style: GoogleFonts.spaceGrotesk(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: TFLiteService.getThresholdColor(
+                                    _result!.label, _result!.confidence),
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -816,6 +1259,86 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // --- Added Disease Description and Symptoms ---
+                            if (_result!.label == 'Early_Blight' || _result!.label == 'Leaf_Miner' || _result!.label == 'Leaf_Mold') ...[
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.info_outline,
+                                    color: const Color(0xFF309249),
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    _isFilipino ? "Tungkol sa Sakit" : "About the Disease",
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : Colors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(24),
+                                decoration: BoxDecoration(
+                                  color: cardColor,
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(isDark ? 0.4 : 0.08),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _isFilipino ? "Paglalarawan" : "Description",
+                                      style: GoogleFonts.spaceGrotesk(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white : Colors.black87,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _getDiseaseInfo(_result!.label, _isFilipino)['description']!,
+                                      style: GoogleFonts.spaceGrotesk(
+                                        fontSize: 14,
+                                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _isFilipino ? "Mga Sintomas" : "Symptoms",
+                                      style: GoogleFonts.spaceGrotesk(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white : Colors.black87,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _getDiseaseInfo(_result!.label, _isFilipino)['symptoms']!,
+                                      style: GoogleFonts.spaceGrotesk(
+                                        fontSize: 14,
+                                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                            ],
+                            // ----------------------------------------------
+
                             Row(
                               children: [
                                 Icon(
@@ -950,9 +1473,13 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                       .toList(),
                                 ),
                               ),
+                            const SizedBox(height: 20),
+                            _buildReminderCta(isDark),
                           ],
                         ),
                       ),
+
+                    _buildRatingAndContributionSection(isDark),
 
                     // ── Disease Carousel (Improvement 1) ──
                     if (_result!.label != 'Not_Tomato')
@@ -1290,6 +1817,11 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     bool isLast = false,
   }) {
     String cleanStep = step.replaceFirst(RegExp(r'^\d+[\.\)]\s*'), '');
+    final baseStyle = GoogleFonts.spaceGrotesk(
+      fontSize: 15,
+      color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87,
+      height: 1.5,
+    );
 
     return Padding(
       padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
@@ -1317,12 +1849,10 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(top: 5),
-              child: Text(
-                cleanStep,
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 15,
-                  color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87,
-                  height: 1.5,
+              child: RichText(
+                text: TextSpan(
+                  style: baseStyle,
+                  children: _buildMarkdownBoldSpans(cleanStep, baseStyle),
                 ),
               ),
             ),
@@ -1332,10 +1862,145 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     );
   }
 
-  IconData _getConfidenceIcon(double confidence) {
-    if (confidence >= 0.80) return Icons.check_circle;
-    if (confidence >= 0.60) return Icons.info;
-    if (confidence >= 0.40) return Icons.warning_amber_rounded;
-    return Icons.error_outline;
+  List<TextSpan> _buildMarkdownBoldSpans(String text, TextStyle baseStyle) {
+    final matches = RegExp(r'\*\*(.+?)\*\*').allMatches(text);
+    if (matches.isEmpty) {
+      return [TextSpan(text: text)];
+    }
+
+    final spans = <TextSpan>[];
+    var currentIndex = 0;
+
+    for (final match in matches) {
+      if (match.start > currentIndex) {
+        spans.add(TextSpan(text: text.substring(currentIndex, match.start)));
+      }
+
+      spans.add(
+        TextSpan(
+          text: match.group(1) ?? '',
+          style: baseStyle.copyWith(fontWeight: FontWeight.bold),
+        ),
+      );
+
+      currentIndex = match.end;
+    }
+
+    if (currentIndex < text.length) {
+      spans.add(TextSpan(text: text.substring(currentIndex)));
+    }
+
+    return spans;
   }
+
+  Widget _buildReminderCta(bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.35 : 0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.notifications_active, color: Color(0xFF309249)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _isFilipino
+                      ? 'Magtakda ng paalala sa pag-aalaga'
+                      : 'Set a care reminder',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _isFilipino
+                ? 'Magdagdag ng reminder para sa pagdidilig, pagpapataba, o pag-check ng lupa habang ginagamot ang iyong halaman.'
+                : 'Add a reminder for watering, fertilizing, or checking the soil while you treat your plant.',
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 14,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _showReminderCategorySheet,
+              icon: const Icon(Icons.add_alert_rounded),
+              label: Text(
+                _isFilipino ? 'Magdagdag ng Paalala' : 'Add Reminder',
+                style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF309249),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                elevation: 0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Map<String, String> _getDiseaseInfo(String label, bool isFilipino) {
+    switch (label) {
+      case 'Early_Blight':
+        return {
+          'description': isFilipino
+              ? "Isang karaniwang sakit na dala ng fungus na Alternaria solani."
+              : "A common fungal disease caused by Alternaria solani.",
+          'symptoms': isFilipino
+              ? "Maiitim at pabilog na batik sa mga lumang dahon, paninilaw ng paligid ng batik, at maagang pagkalagas ng dahon."
+              : "Dark, concentric rings or bullseye spots on older leaves, yellowing of surrounding tissue, and premature leaf drop."
+        };
+      case 'Leaf_Miner':
+        return {
+          'description': isFilipino
+              ? "Pinsala na dulot ng uod ng insekto na naninirahan at kumakain sa loob ng dahon."
+              : "Damage caused by insect larvae living and feeding inside the leaf tissue.",
+          'symptoms': isFilipino
+              ? "Puti o abuhin na paliku-likong linya o tunnel (mines) sa mga dahon."
+              : "White or grayish winding trails or tunnels (mines) on the leaves."
+        };
+      case 'Leaf_Mold':
+        return {
+          'description': isFilipino
+              ? "Isang sakit na dala ng fungus na Passalora fulva, karaniwan sa mga lugar na mataas ang halumigmig."
+              : "A fungal disease caused by Passalora fulva, common in high humidity.",
+          'symptoms': isFilipino
+              ? "Maputlang berde o dilaw na batik sa ibabaw ng dahon, at may tila pelus na amag na kulay olive-green hanggang kayumanggi sa ilalim."
+              : "Pale green or yellow spots on the upper leaf surface, with olive-green to brown velvety mold on the underside."
+        };
+      default:
+        return {
+          'description': "",
+          'symptoms': ""
+        };
+    }
+  }
+
 }

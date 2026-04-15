@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'models/contribution_stats.dart';
+import 'models/user_model.dart';
+import 'services/firestore_service.dart';
 import 'theme_provider.dart';
 import 'services/auth_service.dart';
 import 'widgets/onboarding_tutorial.dart';
@@ -15,6 +18,7 @@ class MoreScreen extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final themeProvider = Provider.of<ThemeProvider>(context);
     final user = FirebaseAuth.instance.currentUser;
+    final firestoreService = FirestoreService();
 
     return Scaffold(
       appBar: AppBar(
@@ -81,6 +85,103 @@ class MoreScreen extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 28),
+          ],
+
+          if (user != null) ...[
+            _buildSectionHeader('Manage Data Contributions', theme),
+            const SizedBox(height: 12),
+            StreamBuilder<UserModel?>(
+              stream: firestoreService.getUserProfileStream(user.uid),
+              builder: (context, userSnapshot) {
+                final profile = userSnapshot.data;
+                return StreamBuilder<ContributionStats>(
+                  stream: firestoreService.getContributionStatsStream(user.uid),
+                  builder: (context, statsSnapshot) {
+                    final stats = statsSnapshot.data ?? const ContributionStats();
+                    final contributionOptOut = profile?.contributionOptOut ?? false;
+
+                    return _buildSettingsCard(
+                      theme: theme,
+                      isDark: isDark,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Your Contributions to TomoLeafNet',
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              _buildStatLine(theme, 'Images Contributed', stats.total),
+                              _buildStatLine(theme, 'Approved', stats.approved),
+                              _buildStatLine(theme, 'Pending Review', stats.pendingReview),
+                              _buildStatLine(theme, 'Used in Training', stats.usedInTraining),
+                            ],
+                          ),
+                        ),
+                        Divider(
+                          color: theme.colorScheme.onSurface.withAlpha(20),
+                          height: 1,
+                        ),
+                        SwitchListTile(
+                          value: contributionOptOut,
+                          activeColor: const Color(0xFF309249),
+                          title: Text(
+                            'Opt Out of Future Contributions',
+                            style: GoogleFonts.spaceGrotesk(
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          subtitle: Text(
+                            contributionOptOut
+                                ? 'We will stop asking you to donate future scans.'
+                                : 'Allow the app to ask before donating high-quality scans.',
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurface.withAlpha(120),
+                            ),
+                          ),
+                          onChanged: (value) =>
+                              _setContributionOptOut(context, user.uid, value),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                          title: Text(
+                            'Request Image Deletion',
+                            style: GoogleFonts.spaceGrotesk(
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Ask the admin review queue to remove your contributed images.',
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurface.withAlpha(120),
+                            ),
+                          ),
+                          onTap: stats.total == 0
+                              ? null
+                              : () => _requestContributionDeletion(
+                                  context,
+                                  firestoreService,
+                                  user.uid,
+                                ),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
             ),
             const SizedBox(height: 28),
           ],
@@ -205,6 +306,71 @@ class MoreScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _setContributionOptOut(
+    BuildContext context,
+    String uid,
+    bool value,
+  ) async {
+    await FirestoreService().setContributionOptOut(uid, value);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          value
+              ? 'Future contribution prompts disabled.'
+              : 'Contribution prompts enabled again.',
+          style: GoogleFonts.spaceGrotesk(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _requestContributionDeletion(
+    BuildContext context,
+    FirestoreService firestoreService,
+    String uid,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Request Image Deletion',
+          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Send a deletion request for all of your contributed images?',
+          style: GoogleFonts.spaceGrotesk(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.spaceGrotesk()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Request',
+              style: GoogleFonts.spaceGrotesk(color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    await firestoreService.requestContributionDeletion(uid);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Deletion request sent to the review queue.',
+          style: GoogleFonts.spaceGrotesk(),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSectionHeader(String title, ThemeData theme) {
     return Text(
       title,
@@ -235,6 +401,32 @@ class MoreScreen extends StatelessWidget {
         ],
       ),
       child: Column(children: children),
+    );
+  }
+
+  Widget _buildStatLine(ThemeData theme, String label, int value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 14,
+              color: theme.colorScheme.onSurface.withAlpha(150),
+            ),
+          ),
+          Text(
+            '$value',
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

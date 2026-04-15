@@ -21,7 +21,7 @@ class DiagnoseService {
     final uri = Uri.parse(AppConfig.diagnoseBackendUrl);
 
     final body = jsonEncode({
-      'disease': disease.replaceAll('_', ' '),
+      'disease': disease,
       'confidence': confidence,
     });
 
@@ -35,7 +35,7 @@ class DiagnoseService {
             },
             body: body,
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 45));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
