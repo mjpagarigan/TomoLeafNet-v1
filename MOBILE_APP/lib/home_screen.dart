@@ -14,6 +14,7 @@ import 'models/reminder_model.dart';
 import 'models/scan_model.dart';
 import 'screens/article_reader_screen.dart';
 import 'screens/reminders_screen.dart';
+import 'screens/video_article_screen.dart';
 import 'services/firestore_service.dart';
 import 'services/reminder_service.dart';
 import 'identify_result_screen.dart';
@@ -959,7 +960,9 @@ class _ArticleCardState extends State<ArticleCard> {
   @override
   void initState() {
     super.initState();
-    _fetchMetadata();
+    if (!widget.article.isVideo) {
+      _fetchMetadata();
+    }
     _checkIfRead();
   }
 
@@ -1016,7 +1019,9 @@ class _ArticleCardState extends State<ArticleCard> {
         await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ArticleReaderScreen(article: widget.article),
+            builder: (_) => widget.article.isVideo
+                ? VideoArticleScreen(article: widget.article)
+                : ArticleReaderScreen(article: widget.article),
           ),
         );
         // Refresh read status when coming back
@@ -1064,6 +1069,24 @@ class _ArticleCardState extends State<ArticleCard> {
                 ),
               ),
             ),
+
+            // Video play icon badge
+            if (widget.article.isVideo)
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.55),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white70, width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 36,
+                  ),
+                ),
+              ),
 
             // Content
             Padding(

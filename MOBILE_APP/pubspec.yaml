@@ -79,6 +79,9 @@ dependencies:
   package_info_plus: ^10.0.0
   path_provider: ^2.1.5
 
+  # Bundled video tutorials
+  video_player: ^2.9.2
+
 dependency_overrides:
   camera_avfoundation: 0.9.17+2
 
@@ -98,6 +101,7 @@ flutter:
     - assets/labels.txt
     - assets/images/
     - assets/articles/
+    - assets/videos/
     - assets/disease_samples/early_blight/
     - assets/disease_samples/healthy/
     - assets/disease_samples/leaf_miner/

@@ -282,7 +282,11 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     await _saveScanToFirebase();
   }
 
-  String get _reminderPlantName => 'Tomato';
+  String get _reminderPlantName {
+    if (widget.historyScan != null) return widget.historyScan!.predictedDisease;
+    if (_result != null) return _result!.label;
+    return 'Tomato';
+  }
 
   String? get _reminderPlantImageUrl {
     if (_isHistory) return widget.historyScan?.imageUrl;

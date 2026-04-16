@@ -759,14 +759,14 @@ class _EmptyState extends StatelessWidget {
 
 // ─── Editor sheet (Add / Edit) ────────────────────────────────────────
 
-Future<void> showReminderEditorSheet({
+Future<bool> showReminderEditorSheet({
   required BuildContext context,
   required ReminderCategory category,
   ReminderModel? existing,
   String? initialPlantName,
   String? initialPlantImageUrl,
 }) async {
-  await showModalBottomSheet(
+  final result = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -777,6 +777,33 @@ Future<void> showReminderEditorSheet({
       initialPlantImageUrl: initialPlantImageUrl,
     ),
   );
+
+  final saved = result == true;
+  if (saved && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                existing == null ? 'Reminder added.' : 'Reminder updated.',
+                style: GoogleFonts.spaceGrotesk(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF309249),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+  return saved;
 }
 
 class _ReminderEditorSheet extends StatefulWidget {
@@ -820,6 +847,32 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
     _startDate = e?.startDate ?? DateTime.now();
     _notifyTime = e?.notifyTime ?? const TimeOfDay(hour: 10, minute: 30);
     _validateDateTime();
+
+    if (e == null && widget.initialPlantName == null) {
+      _loadLatestScanAsDefault();
+    }
+  }
+
+  Future<void> _loadLatestScanAsDefault() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('scans')
+          .orderBy('timestamp', descending: true)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty || !mounted) return;
+      final latest = ScanModel.fromFirestore(snap.docs.first);
+      setState(() {
+        _plantName = latest.predictedDisease;
+        _plantImageUrl = latest.imageUrl;
+      });
+    } catch (_) {
+      // Keep the 'Tomato' fallback if the fetch fails.
+    }
   }
 
   void _validateDateTime() {
@@ -1375,7 +1428,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
 
     await LocalNotificationService.instance.scheduleForReminder(saved);
 
-    if (mounted) Navigator.pop(context);
+    if (mounted) Navigator.pop(context, true);
   }
 
   Future<void> _onDelete() async {

@@ -8,6 +8,11 @@ class ArticleModel {
   final String audience; // "Beginner", "Intermediate", "Expert"
   final String coverImageUrl;
 
+  /// When set, the article is played as a bundled video tutorial instead of
+  /// being opened in the WebView. Path is relative to the Flutter asset root
+  /// (e.g. "assets/videos/tomato_planting_basics.mp4").
+  final String? videoAsset;
+
   const ArticleModel({
     required this.title,
     required this.source,
@@ -16,7 +21,10 @@ class ArticleModel {
     required this.summary,
     required this.audience,
     required this.coverImageUrl,
+    this.videoAsset,
   });
+
+  bool get isVideo => videoAsset != null;
 }
 
 // To add a new article, append a new ArticleModel to the list below.
@@ -35,15 +43,15 @@ final List<ArticleModel> hardcodedArticles = [
     coverImageUrl: "assets/articles/philippines_farming_cover.jpg",
   ),
   const ArticleModel(
-    title: "Tomato Leaf Disease Image Dataset",
-    source: "Bureau of Plant Industry — FOI Philippines",
-    url:
-        "https://www.foi.gov.ph/agencies/bpi/tomato-leaf-disease-image-dataset/",
+    title: "Iba't Ibang Uri ng Sakit sa Kamatis",
+    source: "Video Tutorial",
+    url: "video://tomato_disease_types",
     topic: "Visual Identification & Philippines Context",
     summary:
-        "References field images of tomato leaf diseases from Philippine-grown varieties, directly relevant to local disease identification and monitoring.",
+        "Isang panimulang gabay sa mga karaniwang sakit na maaaring maranasan sa pagtatanim ng kamatis — kasama ang mga palatandaan at paraan ng pag-iwas.",
     audience: "Intermediate",
     coverImageUrl: "assets/articles/default_tomato_cover.jpg",
+    videoAsset: "assets/videos/tomato_disease_types.mp4",
   ),
   const ArticleModel(
     title: "Effect of exogenous application of salicylic acid on the severity of tomato leaf curl disease",
@@ -73,13 +81,14 @@ final List<ArticleModel> hardcodedArticles = [
     coverImageUrl: "assets/articles/default_tomato_cover.jpg",
   ),
   const ArticleModel(
-    title: "Tomato Profitable Crop in Philippines, Cultivated Worldwide",
-    source: "Visayas State University",
-    url: "https://atr.vsu.edu.ph/article/download/175/163",
+    title: "Dapat Mong Gawin sa Pagtanim ng Kamatis",
+    source: "Video Tutorial",
+    url: "video://tomato_planting_basics",
     topic: "Prevention tips and best farming practices",
-    summary: "Discusses tomato production constraints in the Philippines, including major diseases with management context.",
+    summary: "Mga pangunahing hakbang at tamang paraan sa pagtatanim ng kamatis para sa masaganang ani.",
     audience: "Beginner",
     coverImageUrl: "assets/articles/philippines_farming_cover.jpg",
+    videoAsset: "assets/videos/tomato_planting_basics.mp4",
   ),
   const ArticleModel(
     title: "Pathogenic and genetic variability of Ralstonia solanacearum in the Philippines",
@@ -100,12 +109,23 @@ final List<ArticleModel> hardcodedArticles = [
     coverImageUrl: "assets/articles/philippines_farming_cover.jpg",
   ),
   const ArticleModel(
-    title: "Environment-friendly fungicide against tomato black leaf mold",
-    source: "DOST-PCAARRD",
-    url: "https://www.pcaarrd.dost.gov.ph/index.php/quick-information-dispatch-qid-articles/environment-friendly-fungicide-against-tomato-black-leaf-mold/",
+    title: "Mabisang Spray para Iwas Leaf Miner at Leaf Blight",
+    source: "Video Tutorial",
+    url: "video://tomato_spray_treatment",
     topic: "Step-by-step treatment",
-    summary: "Philippine research update on a biofungicide tested against tomato black leaf mold in Nueva Vizcaya.",
+    summary: "Paano gumawa at gumamit ng epektibong spray laban sa leaf miner at leaf blight sa kamatis.",
     audience: "Intermediate",
     coverImageUrl: "assets/articles/default_tomato_cover.jpg",
+    videoAsset: "assets/videos/tomato_spray_treatment.mp4",
+  ),
+  const ArticleModel(
+    title: "Paano Magtanim ng Kamatis sa Plastic Bottle",
+    source: "Video Tutorial",
+    url: "video://tomato_plastic_bottle",
+    topic: "Prevention tips and best farming practices",
+    summary: "Praktikal at tipid na paraan ng pagtatanim ng kamatis gamit ang recycled plastic bottles — perfect para sa maliliit na espasyo.",
+    audience: "Beginner",
+    coverImageUrl: "assets/articles/philippines_farming_cover.jpg",
+    videoAsset: "assets/videos/tomato_plastic_bottle.mp4",
   ),
 ];

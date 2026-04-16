@@ -9,6 +9,9 @@ DATA-RAW/
 DATA-SPLIT/
 DATA-LABEL/
 
+# ── Raw source videos (large; compressed copies live in MOBILE_APP/assets/videos/) ──
+/Videos/
+
 # ── Trained model files (large .keras/.h5, keep locally) ─────────────
 MODEL/*.keras
 MODEL/*.h5
