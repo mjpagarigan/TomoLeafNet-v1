@@ -33,6 +33,12 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<ChatMessage> _messages = [];
   bool _isTyping = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _chatService.warmBackend();
+  }
+
   static const List<String> _suggestedQuestions = [
     "Why are my tomato leaves showing white trails?",
     "How do I treat Early Blight on my tomato plant?",
@@ -119,6 +125,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       // Build conversation history for the backend
       final history = _messages
+          .skip(_messages.length > 10 ? _messages.length - 10 : 0)
           .map((m) => {
                 'role': m.isUser ? 'user' : 'assistant',
                 'text': m.text,

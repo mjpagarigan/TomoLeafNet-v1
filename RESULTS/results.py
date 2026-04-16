@@ -14,14 +14,14 @@ from model_utils import load_model as load_custom_model, CLASS_NAMES
 
 # --- PATHS (relative to project root) ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATASET_PATH = os.path.join(BASE_DIR, 'DATA-LABEL')
+DATASET_PATH = os.path.join(BASE_DIR, 'DATA-RAW', 'field')
 RESULTS_DIR = os.path.dirname(os.path.abspath(__file__))
 LIMIT_PER_CLASS = 1000
 
 # Must match the model's output layer order (alphabetical from training)
-ALL_5_CLASSES = [
-    "Bacterial_Spot", "Early_Blight",
-    "Healthy", "Late_Blight", "Septoria"
+ALL_4_CLASSES = [
+    "Early_Blight", "Healthy",
+    "Leaf_Miner", "Leaf_Mold", "Not_Tomato"
 ]
 
 # --- EVALUATION ---
@@ -30,9 +30,9 @@ model = load_custom_model()
 
 y_true, y_pred = [], []
 
-print(f"🚀 Running 5-class evaluation on DATA-LABEL folders...")
+print(f"🚀 Running 5-class evaluation on DATA-RAW/field folders...")
 
-for label_idx, label_name in enumerate(ALL_5_CLASSES):
+for label_idx, label_name in enumerate(ALL_4_CLASSES):
     folder_path = os.path.join(DATASET_PATH, label_name)
 
     if not os.path.exists(folder_path):
@@ -56,7 +56,7 @@ for label_idx, label_name in enumerate(ALL_5_CLASSES):
 # --- CLASSIFICATION REPORT ---
 
 present_indices = np.unique(y_true)
-present_names = [ALL_5_CLASSES[i] for i in present_indices]
+present_names = [ALL_4_CLASSES[i] for i in present_indices]
 
 report = classification_report(
     y_true,
@@ -86,7 +86,7 @@ cm = confusion_matrix(y_true, y_pred, labels=range(5))
 
 plt.figure(figsize=(10, 8))
 sns.heatmap(cm, annot=True, fmt='d', cmap='Greens',
-            xticklabels=ALL_5_CLASSES, yticklabels=ALL_5_CLASSES)
+            xticklabels=ALL_4_CLASSES, yticklabels=ALL_4_CLASSES)
 plt.title("TomoLeafNet v3: 5-Class Confusion Matrix")
 plt.xlabel("Predicted Label")
 plt.ylabel("True Label")

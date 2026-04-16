@@ -67,7 +67,18 @@
       "Bash(python 0_augment_field_dataset.py)",
       "Bash(ls -la \"c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/MOBILE_APP/assets/\"*.tflite)",
       "Bash(ls -la \"c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/MOBILE_APP/assets/\"*.txt)",
-      "Bash(python 4_export_cam_model.py)"
+      "Bash(python 4_export_cam_model.py)",
+      "Bash(ls -la ~/.ssh/id_*)",
+      "Bash(ssh -T git@github.com)",
+      "Bash(winget install:*)",
+      "Bash(export FFMPEG=\"/c/Users/iamha/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-8.1-full_build/bin/ffmpeg.exe\")",
+      "Bash(/c/Users/iamha/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-8.1-full_build/bin/ffmpeg.exe -y -i 'DAPAT mong GAWIN sa PAGTANIM ng KAMATIS - Tomato Farming.mp4' -vf scale=-2:480 -c:v libx264 -preset fast -crf 28 -c:a aac -b:a 96k tomato_planting_basics.mp4)",
+      "Bash(ls -lh *.mp4)",
+      "Bash(mkdir -p \"c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/MOBILE_APP/assets/videos\")",
+      "Bash(mv c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/Videos/tomato_planting_basics.mp4 c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/Videos/tomato_disease_types.mp4 c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/Videos/tomato_spray_treatment.mp4 c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/Videos/tomato_plastic_bottle.mp4 c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/MOBILE_APP/assets/videos/)",
+      "Bash(git lfs:*)",
+      "WebFetch(domain:youtu.be)",
+      "WebFetch(domain:www.youtube.com)"
     ]
   }
 }

@@ -12,7 +12,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/services/leaf_detector_service.dart';
 import 'diagnose_result_screen.dart';
 import 'identify_result_screen.dart';
-import 'main.dart'; // To access global 'cameras' list
 
 class CameraScreen extends StatefulWidget {
   final String scanType;
@@ -92,6 +91,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _initializeCamera() async {
+    final cameras = await availableCameras();
     if (cameras.isEmpty) {
       debugPrint("No cameras found");
       return;
@@ -150,7 +150,7 @@ class _CameraScreenState extends State<CameraScreen>
 
         _latestFrame = cameraImage;
         _detectionTimer ??= Timer(
-          const Duration(milliseconds: 300),
+          const Duration(milliseconds: 500),
           () {
             _detectionTimer = null;
             final frame = _latestFrame;
@@ -193,14 +193,47 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       final result = await _leafDetectorService.detect(cameraImage);
       if (!mounted || _isProcessing) return;
+      final previous = _detectionResult;
+      final shouldUpdate = previous == null ||
+          previous.label != result.label ||
+          (previous.confidence - result.confidence).abs() >= 0.05;
 
-      setState(() {
-        _detectionResult = result;
-      });
+      if (shouldUpdate) {
+        setState(() {
+          _detectionResult = result;
+        });
+      }
     } catch (e) {
       debugPrint("Frame processing error: $e");
     } finally {
       _isProcessingFrame = false;
+    }
+  }
+
+  Future<void> _tearDownCameraResources() async {
+    _detectionTimer?.cancel();
+    _detectionTimer = null;
+    _latestFrame = null;
+    _detectionResult = null;
+    _streamRunning = false;
+    _isProcessingFrame = false;
+
+    try {
+      await _controller?.stopImageStream();
+    } catch (_) {}
+
+    _leafDetectorService.dispose();
+    await _controller?.dispose();
+    _controller = null;
+
+    if (mounted) {
+      setState(() {
+        _isCameraInitialized = false;
+        _isDetectorReady = false;
+      });
+    } else {
+      _isCameraInitialized = false;
+      _isDetectorReady = false;
     }
   }
 
@@ -303,13 +336,15 @@ class _CameraScreenState extends State<CameraScreen>
       resultScreen = IdentifyResultScreen(imagePath: imagePath);
     }
 
+    await _tearDownCameraResources();
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => resultScreen),
     );
 
     if (mounted) {
-      _maybeStartDetection();
+      await _loadDetectorModel();
+      await _initializeCamera();
     }
   }
 

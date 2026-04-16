@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:camera/camera.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
@@ -16,10 +17,7 @@ import 'screens/reminders_screen.dart';
 import 'services/fcm_service.dart';
 import 'services/community_contribution_service.dart';
 import 'services/local_notification_service.dart';
-import 'services/tflite_service.dart';
 import 'widgets/onboarding_tutorial.dart';
-
-List<CameraDescription> cameras = [];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,32 +32,30 @@ Future<void> main() async {
     persistenceEnabled: true,
   );
 
-  // Local notifications + FCM bootstrap for the reminder system
-  await LocalNotificationService.instance.init();
-  await LocalNotificationService.instance.requestPermissions();
-  LocalNotificationService.instance.onNotificationTap = (payload) {
-    final navigator = MyApp.rootNavigatorKey.currentState;
-    navigator?.push(MaterialPageRoute(builder: (_) => const RemindersScreen()));
-  };
-  await FcmService.instance.init();
-  await CommunityContributionService.instance.initialize();
-
-  try {
-    cameras = await availableCameras();
-  } on CameraException catch (e) {
-    print('Error: $e.code\nError Message: $e.message');
-  }
-
-  // Pre-load TFLite models at startup so the first scan doesn't stall.
-  // Singleton — loaded once, shared across all result screens.
-  TFLiteService().loadModel();
-
   runApp(
     ChangeNotifierProvider(
       create: (_) => ThemeProvider(),
       child: const MyApp(),
     ),
   );
+
+  unawaited(_bootstrapDeferredServices());
+}
+
+Future<void> _bootstrapDeferredServices() async {
+  await Future<void>.delayed(const Duration(milliseconds: 250));
+  try {
+    await LocalNotificationService.instance.init();
+    LocalNotificationService.instance.onNotificationTap = (payload) {
+      final navigator = MyApp.rootNavigatorKey.currentState;
+      navigator?.push(MaterialPageRoute(builder: (_) => const RemindersScreen()));
+    };
+    await LocalNotificationService.instance.requestPermissions();
+    await FcmService.instance.init();
+    await CommunityContributionService.instance.initialize();
+  } catch (e) {
+    debugPrint('Deferred startup service failed: $e');
+  }
 }
 
 class MyApp extends StatelessWidget {

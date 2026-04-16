@@ -229,19 +229,24 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         gpsCoordinates: gpsCoordinates,
       );
 
-      final imageUrl = await _storageService.uploadScanImage(
+      final uploaded = await _storageService.uploadScanImage(
         uid: user.uid,
         scanId: scanId,
         localImagePath: widget.imagePath!,
       );
 
-      await _firestoreService.updateScanImageUrl(user.uid, scanId, imageUrl);
+      await _firestoreService.updateScanImageUrls(
+        uid: user.uid,
+        scanId: scanId,
+        imageUrl: uploaded.imageUrl,
+        thumbnailUrl: uploaded.thumbnailUrl,
+      );
 
       if (mounted) {
         setState(() {
           _isSaved = true;
           _savedScanId = scanId;
-          _savedImageUrl = imageUrl;
+          _savedImageUrl = uploaded.imageUrl;
           _savedGpsCoordinates = gpsCoordinates;
         });
       }
@@ -1649,6 +1654,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       if (url != null && url.isNotEmpty) {
         return CachedNetworkImage(
           imageUrl: url,
+          memCacheWidth: 1080,
+          memCacheHeight: 700,
           fit: BoxFit.cover,
           placeholder: (_, __) => Container(
             color: isDark ? Colors.grey[900] : Colors.grey[200],

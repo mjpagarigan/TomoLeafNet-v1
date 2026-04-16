@@ -154,7 +154,6 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
 
   @override
   void dispose() {
-    _tfliteService.dispose();
     _fadeController.dispose();
     super.dispose();
   }
@@ -423,19 +422,24 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         treatmentSteps: _treatmentSteps,
       );
 
-      final imageUrl = await _storageService.uploadScanImage(
+      final uploaded = await _storageService.uploadScanImage(
         uid: user.uid,
         scanId: scanId,
         localImagePath: widget.imagePath!,
       );
 
-      await _firestoreService.updateScanImageUrl(user.uid, scanId, imageUrl);
+      await _firestoreService.updateScanImageUrls(
+        uid: user.uid,
+        scanId: scanId,
+        imageUrl: uploaded.imageUrl,
+        thumbnailUrl: uploaded.thumbnailUrl,
+      );
 
       if (mounted) {
         setState(() {
           _isSaved = true;
           _savedScanId = scanId;
-          _savedImageUrl = imageUrl;
+          _savedImageUrl = uploaded.imageUrl;
           _savedGpsCoordinates = gpsCoordinates;
         });
       }
@@ -1759,6 +1763,8 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       if (url != null && url.isNotEmpty) {
         return CachedNetworkImage(
           imageUrl: url,
+          memCacheWidth: 1080,
+          memCacheHeight: 700,
           fit: BoxFit.cover,
           placeholder: (_, __) => Container(
             color: isDark ? Colors.grey[900] : Colors.grey[200],
@@ -1790,6 +1796,8 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       if (widget.preloadedRemoteImageUrl != null) {
         return CachedNetworkImage(
           imageUrl: widget.preloadedRemoteImageUrl!,
+          memCacheWidth: 1080,
+          memCacheHeight: 700,
           fit: BoxFit.cover,
           placeholder: (_, __) => Container(
             color: isDark ? Colors.grey[900] : Colors.grey[200],

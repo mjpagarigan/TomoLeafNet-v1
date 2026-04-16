@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'models/scan_model.dart';
@@ -20,11 +21,30 @@ class _HistoryScreenState extends State<HistoryScreen> {
   bool _showHealthy = true;
   final _firestoreService = FirestoreService();
   final _storageService = StorageService();
+  final ScrollController _scrollController = ScrollController();
+  List<ScanModel> _allScans = [];
+  bool _isLoadingHistory = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  DocumentSnapshot? _lastScanDocument;
 
   // Multi-select state (Improvement 5)
   bool _isSelectMode = false;
   final Set<String> _selectedScanIds = {};
   bool _isDeleting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _loadInitialHistory();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   void _enterSelectMode() {
     setState(() {
@@ -106,6 +126,76 @@ class _HistoryScreenState extends State<HistoryScreen> {
         _isSelectMode = false;
         _selectedScanIds.clear();
       });
+      await _loadInitialHistory();
+    }
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
+    final threshold = _scrollController.position.maxScrollExtent - 300;
+    if (_scrollController.position.pixels >= threshold) {
+      _loadMoreHistory();
+    }
+  }
+
+  Future<void> _loadInitialHistory() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) {
+        setState(() {
+          _allScans = [];
+          _isLoadingHistory = false;
+          _isLoadingMore = false;
+          _hasMore = false;
+          _lastScanDocument = null;
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _isLoadingHistory = true;
+      _isLoadingMore = false;
+      _hasMore = true;
+      _lastScanDocument = null;
+    });
+
+    try {
+      final page = await _firestoreService.getUserScansPage(user.uid, limit: 15);
+      if (!mounted) return;
+      setState(() {
+        _allScans = page.scans;
+        _lastScanDocument = page.lastDocument;
+        _hasMore = page.hasMore;
+        _isLoadingHistory = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingHistory = false);
+    }
+  }
+
+  Future<void> _loadMoreHistory() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _isLoadingMore || !_hasMore) return;
+
+    setState(() => _isLoadingMore = true);
+    try {
+      final page = await _firestoreService.getUserScansPage(
+        user.uid,
+        limit: 15,
+        startAfterDocument: _lastScanDocument,
+      );
+      if (!mounted) return;
+      setState(() {
+        _allScans = [..._allScans, ...page.scans];
+        _lastScanDocument = page.lastDocument;
+        _hasMore = page.hasMore;
+        _isLoadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
     }
   }
 
@@ -177,6 +267,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     await _storageService.deleteScanImage(
                         uid: userId, scanId: scan.scanId);
                     await _firestoreService.deleteScan(userId, scan.scanId);
+                    if (mounted) {
+                      await _loadInitialHistory();
+                    }
                   } catch (e) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -303,108 +396,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           style: GoogleFonts.spaceGrotesk(color: Colors.grey),
                         ),
                       )
-                    : StreamBuilder<List<ScanModel>>(
-                        stream: _firestoreService.getUserScansStream(user.uid),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                              child: CircularProgressIndicator(
-                                  color: Color(0xFF309249)),
-                            );
-                          }
-
-                          final allScans = snapshot.data ?? [];
-                          final filteredScans = allScans.where((scan) {
-                            if (_showHealthy) {
-                              return scan.predictedDisease == 'Healthy';
-                            } else {
-                              return scan.predictedDisease != 'Healthy';
-                            }
-                          }).toList();
-
-                          if (filteredScans.isEmpty) {
-                            return Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    _showHealthy
-                                        ? Icons.eco
-                                        : Icons.search_off,
-                                    size: 60,
-                                    color: const Color(0xFF309249)
-                                        .withAlpha(80),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    _showHealthy
-                                        ? 'No healthy scans yet'
-                                        : 'No infected scans yet',
-                                    style: GoogleFonts.spaceGrotesk(
-                                      fontSize: 16,
-                                      color: isDark
-                                          ? Colors.grey[400]
-                                          : Colors.grey[600],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Scan a leaf to start tracking!',
-                                    style: GoogleFonts.spaceGrotesk(
-                                      fontSize: 13,
-                                      color: isDark
-                                          ? Colors.grey[500]
-                                          : Colors.grey[500],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-
-                          final diseaseNumbers =
-                              _computeDiseaseNumbers(filteredScans);
-
-                          // Select All button when in select mode
-                          return Column(
-                            children: [
-                              if (_isSelectMode)
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.only(bottom: 8),
-                                  child: Align(
-                                    alignment: Alignment.centerRight,
-                                    child: TextButton(
-                                      onPressed: () =>
-                                          _selectAll(filteredScans),
-                                      child: Text('Select All',
-                                          style: GoogleFonts.spaceGrotesk(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 13,
-                                              color: const Color(
-                                                  0xFF309249))),
-                                    ),
-                                  ),
-                                ),
-                              Expanded(
-                                child: ListView.builder(
-                                  itemCount: filteredScans.length,
-                                  itemBuilder: (context, index) {
-                                    return _buildScanCard(
-                                      scan: filteredScans[index],
-                                      isDark: isDark,
-                                      userId: user.uid,
-                                      diseaseNumber:
-                                          diseaseNumbers[index],
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                    : _buildHistoryContent(user.uid, isDark),
               ),
             ],
           ),
@@ -450,6 +442,106 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHistoryContent(String userId, bool isDark) {
+    if (_isLoadingHistory) {
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFF309249)),
+      );
+    }
+
+    final filteredScans = _allScans.where((scan) {
+      if (_showHealthy) {
+        return scan.predictedDisease == 'Healthy';
+      }
+      return scan.predictedDisease != 'Healthy';
+    }).toList();
+
+    if (filteredScans.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              _showHealthy ? Icons.eco : Icons.search_off,
+              size: 60,
+              color: const Color(0xFF309249).withAlpha(80),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _showHealthy ? 'No healthy scans yet' : 'No infected scans yet',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 16,
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Scan a leaf to start tracking!',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 13,
+                color: isDark ? Colors.grey[500] : Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final diseaseNumbers = _computeDiseaseNumbers(filteredScans);
+
+    return Column(
+      children: [
+        if (_isSelectMode)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => _selectAll(filteredScans),
+                child: Text(
+                  'Select All',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: const Color(0xFF309249),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadInitialHistory,
+            child: ListView.builder(
+              controller: _scrollController,
+              cacheExtent: 500,
+              itemCount: filteredScans.length + (_isLoadingMore ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index >= filteredScans.length) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF309249),
+                      ),
+                    ),
+                  );
+                }
+                return _buildScanCard(
+                  scan: filteredScans[index],
+                  isDark: isDark,
+                  userId: userId,
+                  diseaseNumber: diseaseNumbers[index],
+                );
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -552,9 +644,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   child: SizedBox(
                     width: 60,
                     height: 60,
-                    child: scan.imageUrl != null && scan.imageUrl!.isNotEmpty
+                    child: scan.previewImageUrl != null
                         ? CachedNetworkImage(
-                            imageUrl: scan.imageUrl!,
+                            imageUrl: scan.previewImageUrl!,
+                            memCacheWidth: 120,
+                            memCacheHeight: 120,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(
                               color: isDark

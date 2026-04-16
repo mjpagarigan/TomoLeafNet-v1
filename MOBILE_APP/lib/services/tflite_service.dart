@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'dart:ui' show Color;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 /// Shared TFLite inference service used by both Identify and Diagnose flows.
@@ -20,6 +21,7 @@ class TFLiteService {
   Interpreter? _interpreter;
   Interpreter? _camInterpreter;
   List<String>? _labels;
+  Future<void>? _camLoadFuture;
 
   /// Output index for predictions [1,5] in the CAM model.
   int _camPredIndex = 1;
@@ -38,11 +40,16 @@ class TFLiteService {
     print("Input shape: ${inputTensor.shape}, type: ${inputTensor.type}");
     print("Output shape: ${outputTensor.shape}, type: ${outputTensor.type}");
 
-    // Load dual-output CAM model for heatmap generation
-    try {
+    final labelData = await rootBundle.loadString('assets/labels.txt');
+    _labels = labelData.split('\n').where((s) => s.trim().isNotEmpty).toList();
+    print("Labels loaded: $_labels");
+  }
+
+  Future<void> _ensureCamModelLoaded() async {
+    if (_camInterpreter != null) return;
+    _camLoadFuture ??= () async {
       _camInterpreter =
           await Interpreter.fromAsset('assets/tomoleafnet_v4_cam.tflite');
-      // Detect output index mapping (TFLite may reorder outputs)
       final outputs = _camInterpreter!.getOutputTensors();
       for (int i = 0; i < outputs.length; i++) {
         final shape = outputs[i].shape;
@@ -53,13 +60,13 @@ class TFLiteService {
         }
       }
       print("CAM model loaded: pred=$_camPredIndex, cam=$_camMapsIndex");
-    } catch (e) {
-      print("CAM model not available, falling back to occlusion: $e");
-    }
+    }();
 
-    final labelData = await rootBundle.loadString('assets/labels.txt');
-    _labels = labelData.split('\n').where((s) => s.trim().isNotEmpty).toList();
-    print("Labels loaded: $_labels");
+    try {
+      await _camLoadFuture;
+    } finally {
+      _camLoadFuture = null;
+    }
   }
 
   /// Preprocess an image file into a Float32List suitable for the model.
@@ -67,58 +74,7 @@ class TFLiteService {
   /// Applies center-crop + bilinear resize to 224×224.
   /// MobileNetV3 handles normalization internally, so raw [0, 255] is passed.
   Future<Float32List> preprocessImage(String imagePath) async {
-    final bytes = await File(imagePath).readAsBytes();
-
-    final originalCodec = await ui.instantiateImageCodec(bytes);
-    final originalFrame = await originalCodec.getNextFrame();
-    final originalImage = originalFrame.image;
-    final int origW = originalImage.width;
-    final int origH = originalImage.height;
-
-    final int minDim = origW < origH ? origW : origH;
-    final int cropX = (origW - minDim) ~/ 2;
-    final int cropY = (origH - minDim) ~/ 2;
-
-    final fullByteData =
-        await originalImage.toByteData(format: ui.ImageByteFormat.rawRgba);
-    if (fullByteData == null) throw Exception("Failed to get image byte data");
-    final fullPixels = fullByteData.buffer.asUint8List();
-
-    const int targetSize = 224;
-    final inputBuffer = Float32List(1 * targetSize * targetSize * 3);
-    int bufIdx = 0;
-
-    for (int y = 0; y < targetSize; y++) {
-      for (int x = 0; x < targetSize; x++) {
-        final double srcX = cropX + (x + 0.5) * minDim / targetSize - 0.5;
-        final double srcY = cropY + (y + 0.5) * minDim / targetSize - 0.5;
-
-        final int x0 = srcX.floor().clamp(0, origW - 1);
-        final int x1 = (x0 + 1).clamp(0, origW - 1);
-        final int y0 = srcY.floor().clamp(0, origH - 1);
-        final int y1 = (y0 + 1).clamp(0, origH - 1);
-
-        final double xFrac = srcX - x0;
-        final double yFrac = srcY - y0;
-
-        for (int c = 0; c < 3; c++) {
-          final double v00 = fullPixels[(y0 * origW + x0) * 4 + c].toDouble();
-          final double v10 = fullPixels[(y0 * origW + x1) * 4 + c].toDouble();
-          final double v01 = fullPixels[(y1 * origW + x0) * 4 + c].toDouble();
-          final double v11 = fullPixels[(y1 * origW + x1) * 4 + c].toDouble();
-
-          final double value = v00 * (1 - xFrac) * (1 - yFrac) +
-              v10 * xFrac * (1 - yFrac) +
-              v01 * (1 - xFrac) * yFrac +
-              v11 * xFrac * yFrac;
-
-          // MobileNetV3 handles normalization internally — pass raw [0, 255]
-          inputBuffer[bufIdx++] = value;
-        }
-      }
-    }
-
-    return inputBuffer;
+    return compute(_preprocessImageFile, imagePath);
   }
 
   /// Run inference on the preprocessed image buffer.
@@ -238,6 +194,7 @@ class TFLiteService {
   /// original image. Returns PNG bytes.
   Future<Uint8List> generateHeatmap(String imagePath, int classIndex) async {
     if (!isReady) await loadModel();
+    await _ensureCamModelLoaded();
 
     final baseBuffer = await preprocessImage(imagePath);
 
@@ -305,80 +262,13 @@ class TFLiteService {
       }
     }
 
-    // ── Bilinear upscale 7×7 → 224×224 and blend with original ──────
-    // Pre-compute the HSV lookup table (256 entries)
-    final lut = List<List<int>>.generate(256, (i) {
-      final val = i / 255.0;
-      final hue = 0.66 * (1.0 - val);
-      return _hsvToRgb(hue, 1.0, 1.0);
-    });
-
-    final pixels = Uint8List(imgSize * imgSize * 4);
-    for (int y = 0; y < imgSize; y++) {
-      for (int x = 0; x < imgSize; x++) {
-        final srcIdx = (y * imgSize + x) * 3;
-        final dstIdx = (y * imgSize + x) * 4;
-
-        // Map 224×224 pixel to 7×7 CAM grid with bilinear interpolation
-        final gxCenter = (x + 0.5) * camSize / imgSize - 0.5;
-        final gyCenter = (y + 0.5) * camSize / imgSize - 0.5;
-        final gx0 = gxCenter.floor().clamp(0, camSize - 1);
-        final gx1 = (gx0 + 1).clamp(0, camSize - 1);
-        final gy0 = gyCenter.floor().clamp(0, camSize - 1);
-        final gy1 = (gy0 + 1).clamp(0, camSize - 1);
-        final fx = (gxCenter - gx0).clamp(0.0, 1.0);
-        final fy = (gyCenter - gy0).clamp(0.0, 1.0);
-        final val = cam7x7[gy0][gx0] * (1 - fx) * (1 - fy) +
-            cam7x7[gy0][gx1] * fx * (1 - fy) +
-            cam7x7[gy1][gx0] * (1 - fx) * fy +
-            cam7x7[gy1][gx1] * fx * fy;
-
-        final lutIdx = (val * 255).round().clamp(0, 255);
-        final hsvColor = lut[lutIdx];
-
-        final origR = baseBuffer[srcIdx].clamp(0, 255);
-        final origG = baseBuffer[srcIdx + 1].clamp(0, 255);
-        final origB = baseBuffer[srcIdx + 2].clamp(0, 255);
-
-        pixels[dstIdx] = ((origR * 0.6) + (hsvColor[0] * 0.4)).round().clamp(0, 255);
-        pixels[dstIdx + 1] = ((origG * 0.6) + (hsvColor[1] * 0.4)).round().clamp(0, 255);
-        pixels[dstIdx + 2] = ((origB * 0.6) + (hsvColor[2] * 0.4)).round().clamp(0, 255);
-        pixels[dstIdx + 3] = 255;
-      }
-    }
-
-    // Encode to PNG using dart:ui
-    final completer = _ImageCompleter();
-    ui.decodeImageFromPixels(
-      pixels,
-      imgSize,
-      imgSize,
-      ui.PixelFormat.rgba8888,
-      completer.complete,
+    return compute(
+      _buildHeatmapPng,
+      _HeatmapBuildData(
+        baseBuffer: baseBuffer,
+        cam7x7: cam7x7,
+      ),
     );
-    final image = await completer.future;
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    if (byteData == null) throw Exception('Failed to encode heatmap to PNG');
-    return byteData.buffer.asUint8List();
-  }
-
-  /// Convert HSV (h: 0-1, s: 0-1, v: 0-1) to RGB (0-255 each).
-  static List<int> _hsvToRgb(double h, double s, double v) {
-    final i = (h * 6).floor();
-    final f = h * 6 - i;
-    final p = v * (1 - s);
-    final q = v * (1 - f * s);
-    final t = v * (1 - (1 - f) * s);
-    double r, g, b;
-    switch (i % 6) {
-      case 0: r = v; g = t; b = p; break;
-      case 1: r = q; g = v; b = p; break;
-      case 2: r = p; g = v; b = t; break;
-      case 3: r = p; g = q; b = v; break;
-      case 4: r = t; g = p; b = v; break;
-      default: r = v; g = p; b = q; break;
-    }
-    return [(r * 255).round(), (g * 255).round(), (b * 255).round()];
   }
 
   /// Dispose interpreters.
@@ -387,6 +277,7 @@ class TFLiteService {
     _interpreter = null;
     _camInterpreter?.close();
     _camInterpreter = null;
+    _camLoadFuture = null;
   }
 
   // ── Confidence helpers ──────────────────────────────────────────────
@@ -537,9 +428,137 @@ class TFLiteResult {
       TFLiteService.getThresholdStateNumber(label, confidence);
 }
 
-/// Helper to await a [ui.Image] from [ui.decodeImageFromPixels].
-class _ImageCompleter {
-  final _completer = Completer<ui.Image>();
-  Future<ui.Image> get future => _completer.future;
-  void complete(ui.Image image) => _completer.complete(image);
+class _HeatmapBuildData {
+  const _HeatmapBuildData({
+    required this.baseBuffer,
+    required this.cam7x7,
+  });
+
+  final Float32List baseBuffer;
+  final List<List<double>> cam7x7;
+}
+
+Float32List _preprocessImageFile(String imagePath) {
+  final bytes = File(imagePath).readAsBytesSync();
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) {
+    throw Exception("Failed to decode image");
+  }
+
+  final minDim = decoded.width < decoded.height ? decoded.width : decoded.height;
+  final cropX = (decoded.width - minDim) ~/ 2;
+  final cropY = (decoded.height - minDim) ~/ 2;
+  final cropped = img.copyCrop(
+    decoded,
+    x: cropX,
+    y: cropY,
+    width: minDim,
+    height: minDim,
+  );
+  final resized = img.copyResize(
+    cropped,
+    width: 224,
+    height: 224,
+    interpolation: img.Interpolation.average,
+  );
+
+  final inputBuffer = Float32List(1 * 224 * 224 * 3);
+  int idx = 0;
+  for (int y = 0; y < 224; y++) {
+    for (int x = 0; x < 224; x++) {
+      final pixel = resized.getPixel(x, y);
+      inputBuffer[idx++] = pixel.r.toDouble();
+      inputBuffer[idx++] = pixel.g.toDouble();
+      inputBuffer[idx++] = pixel.b.toDouble();
+    }
+  }
+  return inputBuffer;
+}
+
+Uint8List _buildHeatmapPng(_HeatmapBuildData data) {
+  const imgSize = 224;
+  const camSize = 7;
+  final image = img.Image(width: imgSize, height: imgSize);
+
+  final lut = List<List<int>>.generate(256, (i) {
+    final val = i / 255.0;
+    final hue = 0.66 * (1.0 - val);
+    return _hsvToRgbValue(hue, 1.0, 1.0);
+  });
+
+  for (int y = 0; y < imgSize; y++) {
+    for (int x = 0; x < imgSize; x++) {
+      final srcIdx = (y * imgSize + x) * 3;
+      final gxCenter = (x + 0.5) * camSize / imgSize - 0.5;
+      final gyCenter = (y + 0.5) * camSize / imgSize - 0.5;
+      final gx0 = gxCenter.floor().clamp(0, camSize - 1);
+      final gx1 = (gx0 + 1).clamp(0, camSize - 1);
+      final gy0 = gyCenter.floor().clamp(0, camSize - 1);
+      final gy1 = (gy0 + 1).clamp(0, camSize - 1);
+      final fx = (gxCenter - gx0).clamp(0.0, 1.0);
+      final fy = (gyCenter - gy0).clamp(0.0, 1.0);
+      final val = data.cam7x7[gy0][gx0] * (1 - fx) * (1 - fy) +
+          data.cam7x7[gy0][gx1] * fx * (1 - fy) +
+          data.cam7x7[gy1][gx0] * (1 - fx) * fy +
+          data.cam7x7[gy1][gx1] * fx * fy;
+
+      final lutIdx = (val * 255).round().clamp(0, 255);
+      final hsvColor = lut[lutIdx];
+      final origR = data.baseBuffer[srcIdx].clamp(0, 255).round();
+      final origG = data.baseBuffer[srcIdx + 1].clamp(0, 255).round();
+      final origB = data.baseBuffer[srcIdx + 2].clamp(0, 255).round();
+
+      image.setPixelRgb(
+        x,
+        y,
+        ((origR * 0.6) + (hsvColor[0] * 0.4)).round().clamp(0, 255),
+        ((origG * 0.6) + (hsvColor[1] * 0.4)).round().clamp(0, 255),
+        ((origB * 0.6) + (hsvColor[2] * 0.4)).round().clamp(0, 255),
+      );
+    }
+  }
+
+  return Uint8List.fromList(img.encodePng(image));
+}
+
+List<int> _hsvToRgbValue(double h, double s, double v) {
+  final i = (h * 6).floor();
+  final f = h * 6 - i;
+  final p = v * (1 - s);
+  final q = v * (1 - f * s);
+  final t = v * (1 - (1 - f) * s);
+  double r, g, b;
+  switch (i % 6) {
+    case 0:
+      r = v;
+      g = t;
+      b = p;
+      break;
+    case 1:
+      r = q;
+      g = v;
+      b = p;
+      break;
+    case 2:
+      r = p;
+      g = v;
+      b = t;
+      break;
+    case 3:
+      r = p;
+      g = q;
+      b = v;
+      break;
+    case 4:
+      r = t;
+      g = p;
+      b = v;
+      break;
+    default:
+      r = v;
+      g = p;
+      b = q;
+      break;
+  }
+  return [(r * 255).round(), (g * 255).round(), (b * 255).round()];
 }

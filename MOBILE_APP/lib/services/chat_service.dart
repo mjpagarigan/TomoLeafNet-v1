@@ -9,6 +9,21 @@ import '../core/config/app_config.dart';
 /// (Llama 3.1 8B Instant) with Tomo's agronomist persona and returns
 /// the AI response.
 class ChatService {
+  static final http.Client _client = http.Client();
+
+  Future<void> warmBackend() async {
+    try {
+      await _client
+          .get(
+            Uri.parse(AppConfig.chatBackendHealthUrl),
+            headers: const {'ngrok-skip-browser-warning': 'true'},
+          )
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      // Warm-up is best effort only.
+    }
+  }
+
   /// Send a chat message to the Plant AI backend.
   ///
   /// [message] is the user's current text.
@@ -33,7 +48,7 @@ class ChatService {
     });
 
     try {
-      final response = await http
+      final response = await _client
           .post(
             uri,
             headers: {
@@ -43,7 +58,7 @@ class ChatService {
             },
             body: body,
           )
-          .timeout(const Duration(seconds: 120));
+          .timeout(const Duration(seconds: 45));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;

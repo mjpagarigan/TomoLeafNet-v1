@@ -4,6 +4,7 @@ class ScanModel {
   final String scanId;
   final String uid;
   final String? imageUrl;
+  final String? thumbnailUrl;
   final String predictedDisease;
   final String? disease2;
   final double confidenceScore;
@@ -22,6 +23,7 @@ class ScanModel {
     required this.scanId,
     required this.uid,
     this.imageUrl,
+    this.thumbnailUrl,
     required this.predictedDisease,
     this.disease2,
     required this.confidenceScore,
@@ -43,6 +45,7 @@ class ScanModel {
       scanId: doc.id,
       uid: data['uid'] ?? '',
       imageUrl: data['imageUrl'],
+      thumbnailUrl: data['thumbnailUrl'],
       predictedDisease: data['predictedDisease'] ?? '',
       disease2: data['disease2'],
       confidenceScore: (data['confidenceScore'] as num?)?.toDouble() ?? 0.0,
@@ -65,6 +68,7 @@ class ScanModel {
     return {
       'uid': uid,
       'imageUrl': imageUrl,
+      'thumbnailUrl': thumbnailUrl,
       'predictedDisease': predictedDisease,
       'disease2': disease2,
       'confidenceScore': confidenceScore,
@@ -86,5 +90,11 @@ class ScanModel {
     if (confidence >= 0.60) return "Moderate Confidence";
     if (confidence >= 0.40) return "Low Confidence";
     return "Very Low Confidence";
+  }
+
+  String? get previewImageUrl {
+    if (thumbnailUrl != null && thumbnailUrl!.isNotEmpty) return thumbnailUrl;
+    if (imageUrl != null && imageUrl!.isNotEmpty) return imageUrl;
+    return null;
   }
 }

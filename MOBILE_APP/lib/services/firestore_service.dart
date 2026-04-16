@@ -3,6 +3,18 @@ import '../models/contribution_stats.dart';
 import '../models/scan_model.dart';
 import '../models/user_model.dart';
 
+class ScanPage {
+  const ScanPage({
+    required this.scans,
+    required this.lastDocument,
+    required this.hasMore,
+  });
+
+  final List<ScanModel> scans;
+  final DocumentSnapshot? lastDocument;
+  final bool hasMore;
+}
+
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -34,6 +46,7 @@ class FirestoreService {
     required String confidenceLabel,
     required String scanType,
     String? imageUrl,
+    String? thumbnailUrl,
     String? disease2,
     GeoPoint? gpsCoordinates,
     double? secondConfidence,
@@ -53,6 +66,7 @@ class FirestoreService {
       scanId: docRef.id,
       uid: uid,
       imageUrl: imageUrl,
+      thumbnailUrl: thumbnailUrl,
       predictedDisease: predictedDisease,
       disease2: disease2,
       confidenceScore: confidenceScore,
@@ -72,14 +86,22 @@ class FirestoreService {
     return docRef.id;
   }
 
-  /// Update the imageUrl for a scan after upload completes
-  Future<void> updateScanImageUrl(String uid, String scanId, String imageUrl) async {
+  /// Update the scan's remote image URLs after upload completes.
+  Future<void> updateScanImageUrls({
+    required String uid,
+    required String scanId,
+    required String imageUrl,
+    required String thumbnailUrl,
+  }) async {
     await _firestore
         .collection('users')
         .doc(uid)
         .collection('scans')
         .doc(scanId)
-        .update({'imageUrl': imageUrl});
+        .update({
+      'imageUrl': imageUrl,
+      'thumbnailUrl': thumbnailUrl,
+    });
   }
 
   /// Upgrade an existing "identify" scan to "diagnose" after the user taps
@@ -142,6 +164,33 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) =>
             snapshot.docs.map((doc) => ScanModel.fromFirestore(doc)).toList());
+  }
+
+  /// Paginated scan fetch for memory-friendly history browsing.
+  Future<ScanPage> getUserScansPage(
+    String uid, {
+    int limit = 15,
+    DocumentSnapshot? startAfterDocument,
+  }) async {
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('scans')
+        .orderBy('timestamp', descending: true)
+        .limit(limit);
+
+    if (startAfterDocument != null) {
+      query = query.startAfterDocument(startAfterDocument);
+    }
+
+    final snapshot = await query.get();
+    final scans = snapshot.docs.map((doc) => ScanModel.fromFirestore(doc)).toList();
+
+    return ScanPage(
+      scans: scans,
+      lastDocument: snapshot.docs.isEmpty ? startAfterDocument : snapshot.docs.last,
+      hasMore: snapshot.docs.length == limit,
+    );
   }
 
   /// Delete a scan document

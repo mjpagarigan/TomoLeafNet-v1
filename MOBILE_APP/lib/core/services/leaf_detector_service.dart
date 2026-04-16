@@ -43,10 +43,10 @@ class LeafDetectorService {
       throw StateError('Detector model not loaded. Call loadModel() first.');
     }
 
-    // Convert YUV → RGBA in a background isolate.
-    // Pass plane byte views directly — compute() handles the transfer.
-    final rgbaBytes = await compute(
-      _convertCameraImage,
+    // Build the detector tensor in a background isolate so the UI thread
+    // avoids both full-frame color conversion and crop/resize work.
+    final input = await compute(
+      _cameraImageToTensor,
       _CameraImageData(
         planes: cameraImage.planes
             .map(
@@ -63,16 +63,12 @@ class LeafDetectorService {
       ),
     );
 
-    if (rgbaBytes == null) {
+    if (input == null) {
       return const DetectionResult(
         label: notTomatoLeafLabel,
         confidence: 0.0,
       );
     }
-
-    // Build a flat Float32List input tensor — avoids ~200K nested list objects
-    // that the old List<List<List<List<double>>>> approach created per frame.
-    final input = _buildInputTensor(rgbaBytes, cameraImage.width, cameraImage.height);
 
     final output = List.filled(labels.length, 0.0).reshape([1, labels.length]);
     _interpreter!.run(input, output);
@@ -92,56 +88,26 @@ class LeafDetectorService {
       confidence: bestScore,
     );
   }
-
-  /// Builds a [1, 224, 224, 3] Float32List tensor from the viewfinder region.
-  /// Uses a single contiguous buffer instead of nested Lists to minimize
-  /// GC pressure during real-time detection (~3 FPS).
-  Object _buildInputTensor(
-    Uint8List rgbaBytes,
-    int width,
-    int height,
-  ) {
-    final boxSize = (width * viewfinderFraction).round();
-    final cropX = (width - boxSize) ~/ 2;
-    final cropY =
-        (height - boxSize) ~/ 2 - (viewfinderVerticalOffset * height ~/ 800);
-
-    final safeX = cropX.clamp(0, width - 1);
-    final safeY = cropY.clamp(0, height - 1);
-    final safeW = boxSize.clamp(1, width - safeX);
-    final safeH = boxSize.clamp(1, height - safeY);
-
-    final buffer = Float32List(1 * inputSize * inputSize * 3);
-    int idx = 0;
-    final maxPixelIdx = rgbaBytes.length - 3;
-
-    for (int y = 0; y < inputSize; y++) {
-      final srcY = safeY + (y * safeH ~/ inputSize);
-      for (int x = 0; x < inputSize; x++) {
-        final srcX = safeX + (x * safeW ~/ inputSize);
-        final pixelIdx = (srcY * width + srcX) * 4;
-
-        if (pixelIdx >= 0 && pixelIdx < maxPixelIdx) {
-          buffer[idx] = rgbaBytes[pixelIdx] / 127.5 - 1.0;
-          buffer[idx + 1] = rgbaBytes[pixelIdx + 1] / 127.5 - 1.0;
-          buffer[idx + 2] = rgbaBytes[pixelIdx + 2] / 127.5 - 1.0;
-        }
-        idx += 3;
-      }
-    }
-
-    return buffer.reshape([1, inputSize, inputSize, 3]);
-  }
-
   void dispose() {
     _interpreter?.close();
     _interpreter = null;
   }
 }
 
-Uint8List? _convertCameraImage(_CameraImageData data) {
+Object? _cameraImageToTensor(_CameraImageData data) {
   final width = data.width;
   final height = data.height;
+  final boxSize = (width * LeafDetectorService.viewfinderFraction).round();
+  final cropX = (width - boxSize) ~/ 2;
+  final cropY = (height - boxSize) ~/ 2 -
+      (LeafDetectorService.viewfinderVerticalOffset * height ~/ 800);
+  final safeX = cropX.clamp(0, width - 1);
+  final safeY = cropY.clamp(0, height - 1);
+  final safeW = boxSize.clamp(1, width - safeX);
+  final safeH = boxSize.clamp(1, height - safeY);
+  final buffer = Float32List(
+    1 * LeafDetectorService.inputSize * LeafDetectorService.inputSize * 3,
+  );
 
   try {
     if (data.formatGroupRaw == ImageFormatGroup.yuv420.index &&
@@ -149,64 +115,56 @@ Uint8List? _convertCameraImage(_CameraImageData data) {
       final yPlane = data.planes[0];
       final uPlane = data.planes[1];
       final vPlane = data.planes[2];
-      final rgba = Uint8List(width * height * 4);
-
-      for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-          final yIndex = y * yPlane.bytesPerRow + x;
-          final uvIndex = (y ~/ 2) * uPlane.bytesPerRow +
-              (x ~/ 2) * (uPlane.bytesPerPixel ?? 1);
+      int idx = 0;
+      for (int y = 0; y < LeafDetectorService.inputSize; y++) {
+        final srcY = safeY + (y * safeH ~/ LeafDetectorService.inputSize);
+        for (int x = 0; x < LeafDetectorService.inputSize; x++) {
+          final srcX = safeX + (x * safeW ~/ LeafDetectorService.inputSize);
+          final yIndex = srcY * yPlane.bytesPerRow + srcX;
+          final uvIndex = (srcY ~/ 2) * uPlane.bytesPerRow +
+              (srcX ~/ 2) * (uPlane.bytesPerPixel ?? 1);
 
           final yValue = yPlane.bytes[yIndex];
-          final uValue =
-              uvIndex < uPlane.bytes.length ? uPlane.bytes[uvIndex] : 128;
-          final vValue =
-              uvIndex < vPlane.bytes.length ? vPlane.bytes[uvIndex] : 128;
+          final uValue = uvIndex < uPlane.bytes.length ? uPlane.bytes[uvIndex] : 128;
+          final vValue = uvIndex < vPlane.bytes.length ? vPlane.bytes[uvIndex] : 128;
 
-          final r = (yValue + 1.370705 * (vValue - 128))
-              .round()
-              .clamp(0, 255);
-          final g = (yValue -
-                  0.337633 * (uValue - 128) -
-                  0.698001 * (vValue - 128))
-              .round()
-              .clamp(0, 255);
-          final b = (yValue + 1.732446 * (uValue - 128))
-              .round()
-              .clamp(0, 255);
-
-          final rgbaIndex = (y * width + x) * 4;
-          rgba[rgbaIndex] = r;
-          rgba[rgbaIndex + 1] = g;
-          rgba[rgbaIndex + 2] = b;
-          rgba[rgbaIndex + 3] = 255;
+          buffer[idx++] =
+              ((yValue + 1.370705 * (vValue - 128)).clamp(0, 255) / 127.5) - 1.0;
+          buffer[idx++] = ((yValue -
+                      0.337633 * (uValue - 128) -
+                      0.698001 * (vValue - 128))
+                  .clamp(0, 255) /
+              127.5) -
+              1.0;
+          buffer[idx++] =
+              ((yValue + 1.732446 * (uValue - 128)).clamp(0, 255) / 127.5) - 1.0;
         }
       }
-
-      return rgba;
+      return buffer.reshape([1, LeafDetectorService.inputSize, LeafDetectorService.inputSize, 3]);
     }
 
     if (data.planes.length == 1) {
       final plane = data.planes[0];
-      final rgba = Uint8List(width * height * 4);
-
-      for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-          final srcIndex = y * plane.bytesPerRow + x * 4;
-          final dstIndex = (y * width + x) * 4;
+      int idx = 0;
+      for (int y = 0; y < LeafDetectorService.inputSize; y++) {
+        final srcY = safeY + (y * safeH ~/ LeafDetectorService.inputSize);
+        for (int x = 0; x < LeafDetectorService.inputSize; x++) {
+          final srcX = safeX + (x * safeW ~/ LeafDetectorService.inputSize);
+          final srcIndex = srcY * plane.bytesPerRow + srcX * 4;
 
           if (srcIndex + 3 >= plane.bytes.length) {
+            buffer[idx++] = 0.0;
+            buffer[idx++] = 0.0;
+            buffer[idx++] = 0.0;
             continue;
           }
 
-          rgba[dstIndex] = plane.bytes[srcIndex + 2];
-          rgba[dstIndex + 1] = plane.bytes[srcIndex + 1];
-          rgba[dstIndex + 2] = plane.bytes[srcIndex];
-          rgba[dstIndex + 3] = 255;
+          buffer[idx++] = (plane.bytes[srcIndex + 2] / 127.5) - 1.0;
+          buffer[idx++] = (plane.bytes[srcIndex + 1] / 127.5) - 1.0;
+          buffer[idx++] = (plane.bytes[srcIndex] / 127.5) - 1.0;
         }
       }
-
-      return rgba;
+      return buffer.reshape([1, LeafDetectorService.inputSize, LeafDetectorService.inputSize, 3]);
     }
   } catch (_) {
     return null;

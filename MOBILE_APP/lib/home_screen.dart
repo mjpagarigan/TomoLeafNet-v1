@@ -141,7 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (user == null) return;
     setState(() => _scansLoading = true);
     try {
-      final scans = await _firestoreService.getRecentScans(user.uid, limit: 200);
+      final scans = await _firestoreService.getRecentScans(user.uid, limit: 50);
       if (mounted) {
         setState(() {
           _cachedScans = scans;
@@ -542,9 +542,11 @@ class _HomeScreenState extends State<HomeScreen> {
               child: SizedBox(
                 width: 56,
                 height: 56,
-                child: scan.imageUrl != null && scan.imageUrl!.isNotEmpty
+                child: scan.previewImageUrl != null
                     ? CachedNetworkImage(
-                        imageUrl: scan.imageUrl!,
+                        imageUrl: scan.previewImageUrl!,
+                        memCacheWidth: 112,
+                        memCacheHeight: 112,
                         fit: BoxFit.cover,
                         placeholder: (_, __) => Container(
                           color: isDark ? Colors.grey[800] : Colors.grey[200],
@@ -1041,6 +1043,8 @@ class _ArticleCardState extends State<ArticleCard> {
             _fetchedImageUrl != null
                 ? CachedNetworkImage(
                     imageUrl: _fetchedImageUrl!,
+                    memCacheWidth: 720,
+                    memCacheHeight: 400,
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
                       color: widget.isDark ? Colors.grey[800] : Colors.grey[300],

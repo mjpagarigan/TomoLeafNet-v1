@@ -253,18 +253,20 @@ async def chat(request: ChatRequest):
         )
 
     client: httpx.AsyncClient = app.state.http_client
+    recent_history = request.history[-10:]
+    recent_scans = request.scanHistory[:5]
 
     # Inject the user's recent scan history into the Tomo persona prompt
     enriched_system_prompt = (
         f"{TOMO_SYSTEM_PROMPT}\n\n"
-        f"{_build_scan_history_block(request.scanHistory)}"
+        f"{_build_scan_history_block(recent_scans)}"
     )
 
     # Build the OpenAI-compatible messages array
     messages = [{"role": "system", "content": enriched_system_prompt}]
 
     # Append conversation history
-    for msg in request.history:
+    for msg in recent_history:
         role = "user" if msg.role == "user" else "assistant"
         messages.append({"role": role, "content": msg.text})
 
@@ -276,8 +278,8 @@ async def chat(request: ChatRequest):
         "model": GROQ_MODEL,
         "messages": messages,
         "stream": False,
-        "temperature": 0.7,
-        "max_tokens": 1024,
+        "temperature": 0.4,
+        "max_tokens": 512,
     }
 
     try:
