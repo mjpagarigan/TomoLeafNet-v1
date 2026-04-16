@@ -55,5 +55,21 @@ service cloud.firestore {
 
       allow delete: if false;
     }
+
+    match /scan_correction_requests/{requestId} {
+      allow create: if isSignedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.reviewStatus == 'pending';
+
+      allow read: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.reviewStatus == 'pending'
+        && request.resource.data.adminDecision == null;
+
+      allow delete: if false;
+    }
   }
 }

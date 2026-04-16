@@ -7,14 +7,17 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'app_session.dart';
 import 'diagnose_result_screen.dart';
 import 'models/scan_model.dart';
 import 'services/tflite_service.dart';
 import 'services/community_contribution_service.dart';
-import 'services/diagnose_service.dart';
+import 'services/diagnostic_guide_service.dart';
 import 'services/firestore_service.dart';
+import 'services/heatmap_image_service.dart';
 import 'services/storage_service.dart';
 import 'widgets/disease_carousel.dart';
 import 'widgets/scan_rating_section.dart';
@@ -46,7 +49,6 @@ class IdentifyResultScreen extends StatefulWidget {
 class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     with SingleTickerProviderStateMixin {
   final _tfliteService = TFLiteService();
-  final _diagnoseService = DiagnoseService();
   final _firestoreService = FirestoreService();
   final _storageService = StorageService();
 
@@ -64,7 +66,6 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   // Diagnose This Leaf upgrade state
   bool _isDiagnosing = false;
   bool _hasUpgraded = false;
-  List<String>? _upgradedTreatmentSteps;
   String _diagnoseError = "";
 
   // Low confidence flow (Improvement 8)
@@ -84,6 +85,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   String? _selectedRating;
   String? _ratingConfirmationMessage;
   String? _contributionPromptStatus;
+  String? _correctionRequestStatus;
+  String? _correctionRequestedDisease;
   bool _isContributionUploading = false;
   double _contributionProgress = 0.0;
   String? _contributionStatusMessage;
@@ -92,6 +95,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   late Animation<double> _fadeAnimation;
 
   bool get _isHistory => widget.historyScan != null;
+  bool get _isGuest => AppSession.instance.isGuest;
+  String? get _historyImageUrl => widget.historyScan?.previewImageUrl;
 
   @override
   void initState() {
@@ -134,7 +139,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     final scan = widget.historyScan!;
     _result = TFLiteResult(
       label: scan.predictedDisease,
-      index: 0,
+      index: TFLiteService.getLabelIndex(scan.predictedDisease),
       confidence: scan.confidenceScore,
     );
     _isLoading = false;
@@ -145,6 +150,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     _continuedAnyway = true; // History items were already accepted
     _selectedRating = scan.userRating;
     _contributionPromptStatus = scan.contributionPromptStatus;
+    _correctionRequestStatus = scan.correctionRequestStatus;
+    _correctionRequestedDisease = scan.correctionRequestedDisease;
     _ratingConfirmationMessage = _confirmationMessageFor(scan.userRating);
     _fadeController.forward();
   }
@@ -198,6 +205,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   }
 
   Future<void> _saveScanToFirebase() async {
+    if (_isGuest) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _result == null) return;
 
@@ -260,8 +268,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   Future<void> _onDiagnoseThisLeaf() async {
     if (_result == null || _isDiagnosing) return;
 
-    if (_hasUpgraded && _upgradedTreatmentSteps != null) {
-      _openDiagnoseResult(_upgradedTreatmentSteps!);
+    if (_hasUpgraded) {
+      _openDiagnoseResult();
       return;
     }
 
@@ -271,19 +279,14 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     });
 
     try {
-      final steps = await _diagnoseService.getTreatmentSteps(
-        disease: _result!.label,
-        confidence: double.parse(
-            (_result!.confidence * 100).toStringAsFixed(1)),
-      );
-
       final user = FirebaseAuth.instance.currentUser;
       if (user != null && _savedScanId != null) {
         try {
           await _firestoreService.upgradeScanToDiagnose(
             uid: user.uid,
             scanId: _savedScanId!,
-            treatmentSteps: steps,
+            treatmentSteps:
+                DiagnosticGuideService.getEnglishRemedies(_result!.label),
           );
         } catch (e) {
           print('Failed to upgrade scan to diagnose: $e');
@@ -294,19 +297,18 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       setState(() {
         _isDiagnosing = false;
         _hasUpgraded = true;
-        _upgradedTreatmentSteps = steps;
       });
-      _openDiagnoseResult(steps);
+      _openDiagnoseResult();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isDiagnosing = false;
-        _diagnoseError = e.toString().replaceFirst('Exception: ', '');
+        _diagnoseError = 'Unable to open the diagnostic guide right now.';
       });
     }
   }
 
-  void _openDiagnoseResult(List<String> steps) {
+  void _openDiagnoseResult() {
     if (_result == null) return;
     Navigator.push(
       context,
@@ -314,10 +316,9 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         builder: (_) => DiagnoseResultScreen.preloaded(
           label: _result!.label,
           confidence: _result!.confidence,
-          treatmentSteps: steps,
           scanId: _savedScanId,
           localImagePath: widget.imagePath,
-          remoteImageUrl: _savedImageUrl ?? widget.historyScan?.imageUrl,
+          remoteImageUrl: _savedImageUrl ?? _historyImageUrl,
           upgradedFromIdentify: true,
         ),
       ),
@@ -335,13 +336,22 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       return;
     }
 
-    if (widget.imagePath == null || _result == null) return;
+    if (_result == null) return;
 
     setState(() => _isLoadingGradCam = true);
 
     try {
+      final imagePath = await HeatmapImageService.resolveImagePath(
+        localImagePath: widget.imagePath,
+        remoteImageUrl: _historyImageUrl,
+        cacheKey: _savedScanId ?? widget.historyScan?.scanId ?? _result!.label,
+      );
+      if (imagePath == null) {
+        throw Exception('No image available for Grad-CAM.');
+      }
+
       final bytes = await _tfliteService.generateHeatmap(
-        widget.imagePath!,
+        imagePath,
         _result!.index,
       );
       if (mounted) {
@@ -404,14 +414,16 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     setState(() => _isTranslating = true);
 
     try {
-      final response = await http.post(
-        Uri.parse(AppConfig.translateUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'texts': uncached,
-          'target_language': 'tl',
-        }),
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(
+            Uri.parse(AppConfig.translateUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'texts': uncached,
+              'target_language': 'tl',
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -429,8 +441,186 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   }
 
   String _t(String text) {
+    const englishOnlyLabels = {
+      'Diagnose This Leaf',
+    };
+    if (englishOnlyLabels.contains(text)) return text;
     if (!_isFilipino) return text;
     return _translations[text] ?? text;
+  }
+
+  bool get _canShowGradCamButton {
+    if (_isLoading || _result == null) return false;
+    if (_result!.label == 'Healthy') return false;
+    return widget.imagePath != null || _historyImageUrl != null;
+  }
+
+  bool get _canReportPrediction {
+    return !_isGuest && _savedScanId != null && _result != null;
+  }
+
+  bool get _hasPendingCorrectionRequest {
+    return _correctionRequestStatus == 'pending';
+  }
+
+  Future<void> _reportWrongPrediction() async {
+    final result = _result;
+    final user = FirebaseAuth.instance.currentUser;
+    final scanId = _savedScanId;
+    if (result == null ||
+        user == null ||
+        scanId == null ||
+        _hasPendingCorrectionRequest) {
+      return;
+    }
+
+    final correctedDisease = await _showCorrectionSheet(result.label);
+    if (!mounted ||
+        correctedDisease == null ||
+        correctedDisease == result.label) {
+      return;
+    }
+
+    try {
+      await _firestoreService.submitScanCorrectionRequest(
+        uid: user.uid,
+        scanId: scanId,
+        requestedDisease: correctedDisease,
+        currentPredictedDisease: result.label,
+        confidenceScore: result.confidence,
+        scanType: _isHistory ? widget.historyScan!.scanType : 'identify',
+        imageDownloadUrl: _savedImageUrl ?? _historyImageUrl,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _correctionRequestStatus = 'pending';
+        _correctionRequestedDisease = correctedDisease;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Correction request sent for ${TFLiteService.getDisplayName(correctedDisease)}. Waiting for admin approval.',
+            style: GoogleFonts.spaceGrotesk(),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unable to save the correction right now.',
+            style: GoogleFonts.spaceGrotesk(),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<String?> _showCorrectionSheet(String currentLabel) {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Correct scan result',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Choose the correct result for this scan. This will be sent to the admin and marked as waiting for approval.',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 14,
+                    height: 1.45,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  ),
+                ),
+                if (_hasPendingCorrectionRequest) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFC107).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      'A correction request for ${TFLiteService.getDisplayName(_correctionRequestedDisease ?? currentLabel)} is already pending.',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                ...TFLiteService.supportedLabels.map((label) {
+                  final isSelected = label == currentLabel;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    onTap: isSelected || _hasPendingCorrectionRequest
+                        ? null
+                        : () => Navigator.pop(ctx, label),
+                    leading: Icon(
+                      isSelected
+                          ? Icons.check_circle_rounded
+                          : Icons.bug_report_outlined,
+                      color: isSelected
+                          ? const Color(0xFF309249)
+                          : const Color(0xFFF44336),
+                    ),
+                    title: Text(
+                      TFLiteService.getDisplayName(label),
+                      style: GoogleFonts.spaceGrotesk(
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    subtitle: isSelected
+                        ? Text(
+                            'Current saved result',
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 12,
+                              color:
+                                  isDark ? Colors.grey[500] : Colors.grey[600],
+                            ),
+                          )
+                        : null,
+                    trailing: isSelected
+                        ? const Icon(
+                            Icons.lock_outline,
+                            size: 18,
+                            color: Color(0xFF309249),
+                          )
+                        : null,
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   bool get _canShowRating {
@@ -636,8 +826,9 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         secondConfidence: _result!.secondConfidence,
         thresholdState: _result!.thresholdState,
         localImagePath: widget.imagePath,
-        remoteImageUrl: _savedImageUrl ?? widget.historyScan?.imageUrl,
-        gpsCoordinates: _savedGpsCoordinates ?? widget.historyScan?.gpsCoordinates,
+        remoteImageUrl: _savedImageUrl ?? _historyImageUrl,
+        gpsCoordinates:
+            _savedGpsCoordinates ?? widget.historyScan?.gpsCoordinates,
         onProgress: (progress) {
           if (!mounted) return;
           setState(() => _contributionProgress = progress);
@@ -687,7 +878,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             onThumbsUp: () => _handleRating('thumbs_up'),
             onThumbsDown: () => _handleRating('thumbs_down'),
           ),
-          if (_isContributionUploading || _contributionStatusMessage != null) ...[
+          if (_isContributionUploading ||
+              _contributionStatusMessage != null) ...[
             const SizedBox(height: 16),
             Container(
               width: double.infinity,
@@ -698,7 +890,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 border: Border.all(
                   color: _isContributionUploading
                       ? const Color(0xFF309249).withOpacity(0.25)
-                      : (_contributionStatusMessage?.startsWith('Contribution uploaded') ??
+                      : (_contributionStatusMessage
+                                  ?.startsWith('Contribution uploaded') ??
                               false)
                           ? const Color(0xFF309249).withOpacity(0.25)
                           : Colors.orangeAccent.withOpacity(0.35),
@@ -724,7 +917,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           ? null
                           : _contributionProgress.clamp(0.0, 1.0),
                       color: const Color(0xFF309249),
-                      backgroundColor: const Color(0xFF309249).withOpacity(0.12),
+                      backgroundColor:
+                          const Color(0xFF309249).withOpacity(0.12),
                     ),
                   ],
                 ],
@@ -738,13 +932,17 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
 
   @override
   Widget build(BuildContext context) {
+    context.watch<AppSession>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
     final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
 
     // Improvement 9: Not Tomato — full-screen retake prompt
-    if (!_isLoading && _result != null && _result!.label == 'Not_Tomato' && !_isHistory) {
+    if (!_isLoading &&
+        _result != null &&
+        _result!.label == 'Not_Tomato' &&
+        !_isHistory) {
       return _buildNotTomatoScreen(isDark);
     }
 
@@ -792,7 +990,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 ),
               ),
             ),
-          if (_isSaving)
+          if (!_isGuest && _isSaving)
             const Padding(
               padding: EdgeInsets.only(right: 16),
               child: Center(
@@ -806,7 +1004,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 ),
               ),
             )
-          else if (_isSaved)
+          else if (!_isGuest && _isSaved)
             const Padding(
               padding: EdgeInsets.only(right: 16),
               child: Icon(Icons.cloud_done, color: Color(0xFF309249), size: 24),
@@ -818,10 +1016,13 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Low confidence warning banner (Improvement 8) ──
-            if (_continuedAnyway && _result != null && _result!.confidence < 0.60)
+            if (_continuedAnyway &&
+                _result != null &&
+                _result!.confidence < 0.60)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
                 color: const Color(0xFFF44336).withOpacity(0.15),
                 child: Row(
                   children: [
@@ -901,8 +1102,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                     ),
                   ),
                 // GradCAM toggle button (Improvement 4)
-                if (!_isLoading && _result != null && widget.imagePath != null &&
-                    _result!.label != 'Healthy')
+                if (_canShowGradCamButton)
                   Positioned(
                     top: 20,
                     right: 16,
@@ -915,7 +1115,36 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
-                          _showGradCam ? Icons.visibility_off : Icons.visibility,
+                          _showGradCam
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_canReportPrediction)
+                  Positioned(
+                    top: _canShowGradCamButton ? 84 : 20,
+                    right: 16,
+                    child: GestureDetector(
+                      onTap: _hasPendingCorrectionRequest
+                          ? null
+                          : _reportWrongPrediction,
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: (_hasPendingCorrectionRequest
+                                  ? const Color(0xFFFFC107)
+                                  : const Color(0xFFF44336))
+                              .withOpacity(0.92),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _hasPendingCorrectionRequest
+                              ? Icons.hourglass_top_rounded
+                              : Icons.warning_amber_rounded,
                           color: Colors.white,
                           size: 24,
                         ),
@@ -965,8 +1194,10 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             if (_showGradCam && _heatmapBytes != null)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFFFF3E0),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                color:
+                    isDark ? const Color(0xFF2C2C2C) : const Color(0xFFFFF3E0),
                 child: Text(
                   _isFilipino
                       ? "Ang mga lugar na naka-highlight sa pula ay kung saan nakatuon ang modelo"
@@ -1036,8 +1267,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black
-                                  .withOpacity(isDark ? 0.4 : 0.08),
+                              color:
+                                  Colors.black.withOpacity(isDark ? 0.4 : 0.08),
                               blurRadius: 20,
                               offset: const Offset(0, 8),
                             ),
@@ -1072,7 +1303,9 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               textAlign: TextAlign.center,
                               style: GoogleFonts.spaceGrotesk(
                                 fontSize: 14,
-                                color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                color: isDark
+                                    ? Colors.grey[400]
+                                    : Colors.grey[600],
                                 height: 1.5,
                               ),
                             ),
@@ -1163,8 +1396,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black
-                                  .withOpacity(isDark ? 0.4 : 0.08),
+                              color:
+                                  Colors.black.withOpacity(isDark ? 0.4 : 0.08),
                               blurRadius: 20,
                               offset: const Offset(0, 8),
                             ),
@@ -1174,7 +1407,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              _t("Detection Summary"),
+                              "Detection Summary",
                               style: GoogleFonts.spaceGrotesk(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
@@ -1183,14 +1416,14 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                             ),
                             const SizedBox(height: 20),
                             _buildInfoRow(
-                              _t("Disease"),
-                              _t(_result!.displayName),
+                              "Disease",
+                              _result!.displayName,
                               isDark,
                               icon: Icons.local_florist,
                             ),
                             const SizedBox(height: 16),
                             _buildInfoRow(
-                              _t("Confidence"),
+                              "Confidence",
                               _result!.confidencePercent,
                               isDark,
                               icon: Icons.analytics_outlined,
@@ -1199,18 +1432,22 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                             ),
                             const SizedBox(height: 16),
                             _buildInfoRow(
-                              _t("Status"),
-                              _t(_result!.confidenceLabel),
+                              "Status",
+                              _result!.confidenceLabel,
                               isDark,
                               icon: _getConfidenceIcon(_result!.confidence),
                             ),
 
-                            if (_result!.label == 'Early_Blight' || _result!.label == 'Leaf_Miner' || _result!.label == 'Leaf_Mold') ...[
+                            if (_result!.label == 'Early_Blight' ||
+                                _result!.label == 'Leaf_Miner' ||
+                                _result!.label == 'Leaf_Mold') ...[
                               const SizedBox(height: 20),
-                              Divider(color: isDark ? Colors.white24 : Colors.black12),
+                              Divider(
+                                  color:
+                                      isDark ? Colors.white24 : Colors.black12),
                               const SizedBox(height: 16),
                               Text(
-                                _isFilipino ? "Paglalarawan" : "Description",
+                                "Description",
                                 style: GoogleFonts.spaceGrotesk(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -1219,16 +1456,19 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                _getDiseaseInfo(_result!.label, _isFilipino)['description']!,
+                                _getDiseaseInfo(
+                                    _result!.label, false)['description']!,
                                 style: GoogleFonts.spaceGrotesk(
                                   fontSize: 14,
-                                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  color: isDark
+                                      ? Colors.grey[400]
+                                      : Colors.grey[600],
                                   height: 1.5,
                                 ),
                               ),
                               const SizedBox(height: 16),
                               Text(
-                                _isFilipino ? "Mga Sintomas" : "Symptoms",
+                                "Symptoms",
                                 style: GoogleFonts.spaceGrotesk(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -1237,10 +1477,13 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                _getDiseaseInfo(_result!.label, _isFilipino)['symptoms']!,
+                                _getDiseaseInfo(
+                                    _result!.label, false)['symptoms']!,
                                 style: GoogleFonts.spaceGrotesk(
                                   fontSize: 14,
-                                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  color: isDark
+                                      ? Colors.grey[400]
+                                      : Colors.grey[600],
                                   height: 1.5,
                                 ),
                               ),
@@ -1252,8 +1495,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               Container(
                                 padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF44336)
-                                      .withOpacity(0.1),
+                                  color:
+                                      const Color(0xFFF44336).withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: const Color(0xFFF44336)
@@ -1311,7 +1554,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+          icon: Icon(Icons.arrow_back,
+              color: Theme.of(context).colorScheme.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -1405,53 +1649,55 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                   ),
                 ),
                 const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _onRetakePhoto,
-                        icon: const Icon(Icons.camera_alt, size: 18),
-                        label: Text(
-                          _isFilipino ? "Kunan Muli" : "Retake Photo",
-                          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF309249),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
-                        ),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _onRetakePhoto,
+                    icon: const Icon(Icons.camera_alt, size: 18),
+                    label: Text(
+                      _isFilipino ? "Kunan Muli" : "Retake Photo",
+                      style:
+                          GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF309249),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // The camera screen is still in the stack
+                    },
+                    icon: const Icon(Icons.image, size: 18),
+                    label: Text(
+                      _isFilipino
+                          ? "Pumili mula Gallery"
+                          : "Choose from Gallery",
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          // The camera screen is still in the stack
-                        },
-                        icon: const Icon(Icons.image, size: 18),
-                        label: Text(
-                          _isFilipino ? "Pumili mula Gallery" : "Choose from Gallery",
-                          style: GoogleFonts.spaceGrotesk(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF309249),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          side: const BorderSide(color: Color(0xFF309249)),
-                        ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF309249),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
+                      side: const BorderSide(color: Color(0xFF309249)),
                     ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -1473,7 +1719,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+          icon: Icon(Icons.arrow_back,
+              color: Theme.of(context).colorScheme.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -1585,7 +1832,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                     icon: const Icon(Icons.camera_alt, size: 18),
                     label: Text(
                       _isFilipino ? "Kunan Muli" : "Retake Photo",
-                      style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                      style:
+                          GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF309249),
@@ -1604,7 +1852,9 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                   child: TextButton(
                     onPressed: _onContinueAnyway,
                     child: Text(
-                      _isFilipino ? "Ituloy Pa Rin \u2192" : "Continue Anyway \u2192",
+                      _isFilipino
+                          ? "Ituloy Pa Rin \u2192"
+                          : "Continue Anyway \u2192",
                       style: GoogleFonts.spaceGrotesk(
                         color: isDark ? Colors.grey[400] : Colors.grey[600],
                         fontWeight: FontWeight.w600,
@@ -1650,7 +1900,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
 
   Widget _buildHeroImage(bool isDark) {
     if (_isHistory) {
-      final url = widget.historyScan!.imageUrl;
+      final url = _historyImageUrl;
       if (url != null && url.isNotEmpty) {
         return CachedNetworkImage(
           imageUrl: url,
@@ -1665,8 +1915,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
           errorWidget: (_, __, ___) => Container(
             color: isDark ? Colors.grey[900] : Colors.grey[200],
             alignment: Alignment.center,
-            child: Icon(Icons.broken_image,
-                size: 64, color: Colors.grey[500]),
+            child: Icon(Icons.broken_image, size: 64, color: Colors.grey[500]),
           ),
         );
       }
@@ -1680,11 +1929,10 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   }
 
   Widget _buildDiagnoseCta(bool isDark) {
-    final historyHasTreatment = _isHistory &&
-        widget.historyScan!.scanType == 'diagnose' &&
-        (widget.historyScan!.treatmentSteps?.isNotEmpty ?? false);
+    final historyHasGuide =
+        _isHistory && widget.historyScan!.scanType == 'diagnose';
     final alreadyUpgraded = _hasUpgraded;
-    final isViewOnly = historyHasTreatment || alreadyUpgraded;
+    final isViewOnly = historyHasGuide || alreadyUpgraded;
 
     if (_isDiagnosing) {
       return Container(
@@ -1707,7 +1955,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             ),
             const SizedBox(width: 12),
             Text(
-              "Analyzing treatment...",
+              "Opening guide...",
               style: GoogleFonts.spaceGrotesk(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
@@ -1725,8 +1973,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
           width: double.infinity,
           child: ElevatedButton(
             onPressed: () {
-              if (isViewOnly && historyHasTreatment) {
-                _openDiagnoseResult(widget.historyScan!.treatmentSteps!);
+              if (isViewOnly && historyHasGuide) {
+                _openDiagnoseResult();
               } else {
                 _onDiagnoseThisLeaf();
               }
@@ -1742,7 +1990,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             ),
             child: Text(
               isViewOnly
-                  ? "View Treatment"
+                  ? "View Diagnostic Guide"
                   : _t("Diagnose This Leaf") + " 🌿",
               style: GoogleFonts.spaceGrotesk(
                 fontSize: 16,
@@ -1766,8 +2014,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             ),
             child: Row(
               children: [
-                const Icon(Icons.wifi_off,
-                    color: Color(0xFFF44336), size: 20),
+                const Icon(Icons.wifi_off, color: Color(0xFFF44336), size: 20),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -1826,39 +2073,49 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   }
 
   Map<String, String> _getDiseaseInfo(String label, bool isFilipino) {
+    const useEnglishOnly = true;
     switch (label) {
       case 'Early_Blight':
         return {
-          'description': isFilipino
-              ? "Isang karaniwang sakit na dala ng fungus na Alternaria solani."
-              : "A common fungal disease caused by Alternaria solani.",
-          'symptoms': isFilipino
-              ? "Maiitim at pabilog na batik sa mga lumang dahon, paninilaw ng paligid ng batik, at maagang pagkalagas ng dahon."
-              : "Dark, concentric rings or bullseye spots on older leaves, yellowing of surrounding tissue, and premature leaf drop."
+          'description': useEnglishOnly
+              ? "A common fungal disease caused by Alternaria solani."
+              : isFilipino
+                  ? "Isang karaniwang sakit na dala ng fungus na Alternaria solani."
+                  : "A common fungal disease caused by Alternaria solani.",
+          'symptoms': useEnglishOnly
+              ? "Dark, concentric rings or bullseye spots on older leaves, yellowing of surrounding tissue, and premature leaf drop."
+              : isFilipino
+                  ? "Maiitim at pabilog na batik sa mga lumang dahon, paninilaw ng paligid ng batik, at maagang pagkalagas ng dahon."
+                  : "Dark, concentric rings or bullseye spots on older leaves, yellowing of surrounding tissue, and premature leaf drop."
         };
       case 'Leaf_Miner':
         return {
-          'description': isFilipino
-              ? "Pinsala na dulot ng uod ng insekto na naninirahan at kumakain sa loob ng dahon."
-              : "Damage caused by insect larvae living and feeding inside the leaf tissue.",
-          'symptoms': isFilipino
-              ? "Puti o abuhin na paliku-likong linya o tunnel (mines) sa mga dahon."
-              : "White or grayish winding trails or tunnels (mines) on the leaves."
+          'description': useEnglishOnly
+              ? "Damage caused by insect larvae living and feeding inside the leaf tissue."
+              : isFilipino
+                  ? "Pinsala na dulot ng uod ng insekto na naninirahan at kumakain sa loob ng dahon."
+                  : "Damage caused by insect larvae living and feeding inside the leaf tissue.",
+          'symptoms': useEnglishOnly
+              ? "White or grayish winding trails or tunnels (mines) on the leaves."
+              : isFilipino
+                  ? "Puti o abuhin na paliku-likong linya o tunnel (mines) sa mga dahon."
+                  : "White or grayish winding trails or tunnels (mines) on the leaves."
         };
       case 'Leaf_Mold':
         return {
-          'description': isFilipino
-              ? "Isang sakit na dala ng fungus na Passalora fulva, karaniwan sa mga lugar na mataas ang halumigmig."
-              : "A fungal disease caused by Passalora fulva, common in high humidity.",
-          'symptoms': isFilipino
-              ? "Maputlang berde o dilaw na batik sa ibabaw ng dahon, at may tila pelus na amag na kulay olive-green hanggang kayumanggi sa ilalim."
-              : "Pale green or yellow spots on the upper leaf surface, with olive-green to brown velvety mold on the underside."
+          'description': useEnglishOnly
+              ? "A fungal disease caused by Passalora fulva, common in high humidity."
+              : isFilipino
+                  ? "Isang sakit na dala ng fungus na Passalora fulva, karaniwan sa mga lugar na mataas ang halumigmig."
+                  : "A fungal disease caused by Passalora fulva, common in high humidity.",
+          'symptoms': useEnglishOnly
+              ? "Pale green or yellow spots on the upper leaf surface, with olive-green to brown velvety mold on the underside."
+              : isFilipino
+                  ? "Maputlang berde o dilaw na batik sa ibabaw ng dahon, at may tila pelus na amag na kulay olive-green hanggang kayumanggi sa ilalim."
+                  : "Pale green or yellow spots on the upper leaf surface, with olive-green to brown velvety mold on the underside."
         };
       default:
-        return {
-          'description': "",
-          'symptoms': ""
-        };
+        return {'description': "", 'symptoms': ""};
     }
   }
 

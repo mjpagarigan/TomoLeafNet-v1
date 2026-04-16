@@ -5,9 +5,8 @@ import '../core/config/app_config.dart';
 /// Service for communicating with the Plant AI chat backend.
 ///
 /// Sends user messages, conversation history, and recent scan history
-/// to the FastAPI server, which forwards them to Groq Cloud
-/// (Llama 3.1 8B Instant) with Tomo's agronomist persona and returns
-/// the AI response.
+/// to the FastAPI server, which forwards them to Groq Cloud with
+/// Tomo's agronomist persona and returns the AI response.
 class ChatService {
   static final http.Client _client = http.Client();
 
@@ -71,13 +70,13 @@ class ChatService {
     } on http.ClientException {
       throw Exception(
         'Unable to reach Plant AI backend.\n'
-        'Ensure the FastAPI server and Ollama are running on your development machine.',
+        'Ensure the FastAPI backend is running and reachable.',
       );
     } catch (e) {
       if (e is Exception) rethrow;
       throw Exception(
         'Unable to reach Plant AI backend.\n'
-        'Ensure the FastAPI server and Ollama are running on your development machine.',
+        'Ensure the FastAPI backend is running and reachable.',
       );
     }
   }

@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/contribution_stats.dart';
 import '../models/scan_model.dart';
 import '../models/user_model.dart';
+import 'diagnostic_guide_service.dart';
+import 'tflite_service.dart';
 
 class ScanPage {
   const ScanPage({
@@ -56,11 +58,8 @@ class FirestoreService {
     String? contributionId,
     String? contributionPromptStatus,
   }) async {
-    final docRef = _firestore
-        .collection('users')
-        .doc(uid)
-        .collection('scans')
-        .doc();
+    final docRef =
+        _firestore.collection('users').doc(uid).collection('scans').doc();
 
     final scan = ScanModel(
       scanId: docRef.id,
@@ -125,13 +124,9 @@ class FirestoreService {
   /// One-shot migration: rewrite any reminder whose plantName is
   /// "Solanum lycopersicum" to the user-friendly "Tomato" label.
   Future<void> migrateReminderPlantNameToTomato(String uid) async {
-    final col = _firestore
-        .collection('users')
-        .doc(uid)
-        .collection('reminders');
-    final snap = await col
-        .where('plantName', isEqualTo: 'Solanum lycopersicum')
-        .get();
+    final col = _firestore.collection('users').doc(uid).collection('reminders');
+    final snap =
+        await col.where('plantName', isEqualTo: 'Solanum lycopersicum').get();
     if (snap.docs.isEmpty) return;
     final batch = _firestore.batch();
     for (final doc in snap.docs) {
@@ -184,11 +179,13 @@ class FirestoreService {
     }
 
     final snapshot = await query.get();
-    final scans = snapshot.docs.map((doc) => ScanModel.fromFirestore(doc)).toList();
+    final scans =
+        snapshot.docs.map((doc) => ScanModel.fromFirestore(doc)).toList();
 
     return ScanPage(
       scans: scans,
-      lastDocument: snapshot.docs.isEmpty ? startAfterDocument : snapshot.docs.last,
+      lastDocument:
+          snapshot.docs.isEmpty ? startAfterDocument : snapshot.docs.last,
       hasMore: snapshot.docs.length == limit,
     );
   }
@@ -236,6 +233,73 @@ class FirestoreService {
         .collection('scans')
         .doc(scanId)
         .update({'contributionPromptStatus': contributionPromptStatus});
+  }
+
+  /// Submit a user correction request for admin approval.
+  Future<void> submitScanCorrectionRequest({
+    required String uid,
+    required String scanId,
+    required String requestedDisease,
+    required String currentPredictedDisease,
+    required double confidenceScore,
+    required String scanType,
+    String? imageDownloadUrl,
+  }) async {
+    final docRef =
+        _firestore.collection('users').doc(uid).collection('scans').doc(scanId);
+    final requestRef =
+        _firestore.collection('scan_correction_requests').doc(scanId);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(docRef);
+      final data = snapshot.data() as Map<String, dynamic>?;
+      final currentStatus = data?['correctionRequestStatus']?.toString();
+
+      if (currentStatus == 'pending') {
+        return;
+      }
+
+      final updates = <String, dynamic>{
+        'correctionRequestedDisease': requestedDisease,
+        'correctionRequestStatus': 'pending',
+        'correctionRequestedAt': FieldValue.serverTimestamp(),
+      };
+
+      final existingOriginal = data?['originalPredictedDisease']?.toString();
+      if ((existingOriginal == null || existingOriginal.isEmpty) &&
+          currentPredictedDisease != requestedDisease) {
+        updates['originalPredictedDisease'] = currentPredictedDisease;
+      }
+
+      transaction.update(docRef, updates);
+
+      transaction.set(requestRef, {
+        'requestId': scanId,
+        'scanId': scanId,
+        'ownerUid': uid,
+        'currentPredictedDisease': currentPredictedDisease,
+        'requestedDisease': requestedDisease,
+        'confidenceScore': confidenceScore,
+        'confidenceLabel': ScanModel.getConfidenceLabel(confidenceScore),
+        'thresholdState': TFLiteService.getThresholdState(
+          currentPredictedDisease,
+          confidenceScore,
+        ),
+        'scanType': scanType,
+        'imageDownloadUrl': imageDownloadUrl ?? data?['imageUrl'],
+        'thumbnailUrl': data?['thumbnailUrl'],
+        'submittedAt': FieldValue.serverTimestamp(),
+        'reviewStatus': 'pending',
+        'resolvedAt': null,
+        'adminDecision': null,
+        'currentTreatmentSteps': scanType == 'diagnose'
+            ? DiagnosticGuideService.getEnglishRemedies(currentPredictedDisease)
+            : null,
+        'requestedTreatmentSteps': scanType == 'diagnose'
+            ? DiagnosticGuideService.getEnglishRemedies(requestedDisease)
+            : null,
+      });
+    });
   }
 
   /// Create the canonical contribution metadata document.

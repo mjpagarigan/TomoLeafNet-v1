@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import '../../app_session.dart';
 import '../../main.dart';
 import 'login_screen.dart';
 
@@ -10,26 +12,39 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        // Show loading while checking auth state
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(color: Color(0xFF309249)),
-            ),
-          );
-        }
+    return Consumer<AppSession>(
+      builder: (context, session, _) => StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(color: Color(0xFF309249)),
+              ),
+            );
+          }
 
-        // User is signed in -> show main app
-        if (snapshot.hasData) {
-          return const MainScreen();
-        }
+          if (snapshot.hasData) {
+            if (!session.isAuthenticated) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                session.setAuthenticated();
+              });
+            }
+            return const MainScreen();
+          }
 
-        // Not signed in -> show login
-        return const LoginScreen();
-      },
+          if (session.isGuest) {
+            return const MainScreen();
+          }
+
+          if (!session.isSignedOut) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              session.setSignedOut();
+            });
+          }
+          return const LoginScreen();
+        },
+      ),
     );
   }
 }

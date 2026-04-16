@@ -8,10 +8,9 @@ class ArticleModel {
   final String audience; // "Beginner", "Intermediate", "Expert"
   final String coverImageUrl;
 
-  /// When set, the article is played as a bundled video tutorial instead of
-  /// being opened in the WebView. Path is relative to the Flutter asset root
-  /// (e.g. "assets/videos/tomato_planting_basics.mp4").
-  final String? videoAsset;
+  /// Video tutorials open a lightweight YouTube placeholder instead of
+  /// a bundled offline player, which helps keep the APK smaller.
+  final bool isVideo;
 
   const ArticleModel({
     required this.title,
@@ -21,10 +20,8 @@ class ArticleModel {
     required this.summary,
     required this.audience,
     required this.coverImageUrl,
-    this.videoAsset,
+    this.isVideo = false,
   });
-
-  bool get isVideo => videoAsset != null;
 }
 
 // To add a new article, append a new ArticleModel to the list below.
@@ -44,32 +41,36 @@ final List<ArticleModel> hardcodedArticles = [
   ),
   const ArticleModel(
     title: "Iba't Ibang Uri ng Sakit sa Kamatis",
-    source: "Video Tutorial",
-    url: "video://tomato_disease_types",
+    source: "YouTube",
+    url: "https://youtu.be/Mq1_FH8kSR8?si=NzRlBIc_JkxC2H74",
     topic: "Visual Identification & Philippines Context",
     summary:
         "Isang panimulang gabay sa mga karaniwang sakit na maaaring maranasan sa pagtatanim ng kamatis — kasama ang mga palatandaan at paraan ng pag-iwas.",
     audience: "Intermediate",
     coverImageUrl: "assets/articles/default_tomato_cover.jpg",
-    videoAsset: "assets/videos/tomato_disease_types.mp4",
+    isVideo: true,
   ),
   const ArticleModel(
-    title: "Effect of exogenous application of salicylic acid on the severity of tomato leaf curl disease",
-    source: "UPLB",
-    url: "https://www.ukdr.uplb.edu.ph/journal-articles/5630/",
+    title: "Tomato Farming Video Tutorial",
+    source: "YouTube",
+    url: "https://youtu.be/OldrAt_jIs4?si=Ip3YXPZoPv9ck5Li",
     topic: "Step-by-step treatment; prevention",
-    summary: "Local university study on reducing tomato leaf curl disease severity using salicylic acid. Useful for treatment and plant-defense discussions.",
-    audience: "Expert",
+    summary:
+        "Practical tomato-growing video guide from YouTube. Tap to watch the tutorial outside the app.",
+    audience: "Intermediate",
     coverImageUrl: "assets/articles/philippines_farming_cover.jpg",
+    isVideo: true,
   ),
   const ArticleModel(
-    title: "Development of weather-based empirical forecasting models for tomato leaf curl disease",
-    source: "UPLB",
-    url: "https://www.ukdr.uplb.edu.ph/journal-articles/154/",
+    title: "Tomato Care Video Tutorial",
+    source: "YouTube",
+    url: "https://youtu.be/5AhbXxKHvrY?si=dwnDsZy9T8t2LauD",
     topic: "How environmental factors affect tomato leaf health",
-    summary: "Philippine field study linking temperature, humidity, rainfall, wind, and whiteflies to disease incidence in Mindanao.",
-    audience: "Expert",
+    summary:
+        "Another practical YouTube tutorial for tomato growers, opened as a lightweight video placeholder instead of an offline file.",
+    audience: "Intermediate",
     coverImageUrl: "assets/articles/philippines_farming_cover.jpg",
+    isVideo: true,
   ),
   const ArticleModel(
     title: "Inventory and incidence of plant diseases affecting vegetables in Visayas and Mindanao",
@@ -82,13 +83,13 @@ final List<ArticleModel> hardcodedArticles = [
   ),
   const ArticleModel(
     title: "Dapat Mong Gawin sa Pagtanim ng Kamatis",
-    source: "Video Tutorial",
-    url: "video://tomato_planting_basics",
+    source: "YouTube",
+    url: "https://youtu.be/Ge5YAX1m-3g?si=J5oE48al2tIEsgba",
     topic: "Prevention tips and best farming practices",
     summary: "Mga pangunahing hakbang at tamang paraan sa pagtatanim ng kamatis para sa masaganang ani.",
     audience: "Beginner",
     coverImageUrl: "assets/articles/philippines_farming_cover.jpg",
-    videoAsset: "assets/videos/tomato_planting_basics.mp4",
+    isVideo: true,
   ),
   const ArticleModel(
     title: "Pathogenic and genetic variability of Ralstonia solanacearum in the Philippines",
@@ -110,22 +111,22 @@ final List<ArticleModel> hardcodedArticles = [
   ),
   const ArticleModel(
     title: "Mabisang Spray para Iwas Leaf Miner at Leaf Blight",
-    source: "Video Tutorial",
-    url: "video://tomato_spray_treatment",
+    source: "YouTube",
+    url: "https://youtu.be/oEmY2aHUuoA?si=IF2w5dJaQXOA8W-q",
     topic: "Step-by-step treatment",
     summary: "Paano gumawa at gumamit ng epektibong spray laban sa leaf miner at leaf blight sa kamatis.",
     audience: "Intermediate",
     coverImageUrl: "assets/articles/default_tomato_cover.jpg",
-    videoAsset: "assets/videos/tomato_spray_treatment.mp4",
+    isVideo: true,
   ),
   const ArticleModel(
     title: "Paano Magtanim ng Kamatis sa Plastic Bottle",
-    source: "Video Tutorial",
-    url: "video://tomato_plastic_bottle",
+    source: "YouTube",
+    url: "https://youtu.be/Y31u7I4X4SU?si=5fvnzfsENbVe3nOZ",
     topic: "Prevention tips and best farming practices",
     summary: "Praktikal at tipid na paraan ng pagtatanim ng kamatis gamit ang recycled plastic bottles — perfect para sa maliliit na espasyo.",
     audience: "Beginner",
     coverImageUrl: "assets/articles/philippines_farming_cover.jpg",
-    videoAsset: "assets/videos/tomato_plastic_bottle.mp4",
+    isVideo: true,
   ),
 ];

@@ -18,6 +18,12 @@ class ScanModel {
   final String? userRating;
   final String? contributionId;
   final String? contributionPromptStatus;
+  final String? originalPredictedDisease;
+  final String? userValidatedDisease;
+  final DateTime? validatedAt;
+  final String? correctionRequestedDisease;
+  final String? correctionRequestStatus;
+  final DateTime? correctionRequestedAt;
 
   ScanModel({
     required this.scanId,
@@ -37,6 +43,12 @@ class ScanModel {
     this.userRating,
     this.contributionId,
     this.contributionPromptStatus,
+    this.originalPredictedDisease,
+    this.userValidatedDisease,
+    this.validatedAt,
+    this.correctionRequestedDisease,
+    this.correctionRequestStatus,
+    this.correctionRequestedAt,
   });
 
   factory ScanModel.fromFirestore(DocumentSnapshot doc) {
@@ -61,6 +73,13 @@ class ScanModel {
       userRating: data['userRating'],
       contributionId: data['contributionId'],
       contributionPromptStatus: data['contributionPromptStatus'],
+      originalPredictedDisease: data['originalPredictedDisease'],
+      userValidatedDisease: data['userValidatedDisease'],
+      validatedAt: (data['validatedAt'] as Timestamp?)?.toDate(),
+      correctionRequestedDisease: data['correctionRequestedDisease'],
+      correctionRequestStatus: data['correctionRequestStatus'],
+      correctionRequestedAt:
+          (data['correctionRequestedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -82,6 +101,15 @@ class ScanModel {
       'userRating': userRating,
       'contributionId': contributionId,
       'contributionPromptStatus': contributionPromptStatus,
+      'originalPredictedDisease': originalPredictedDisease,
+      'userValidatedDisease': userValidatedDisease,
+      'validatedAt':
+          validatedAt == null ? null : Timestamp.fromDate(validatedAt!),
+      'correctionRequestedDisease': correctionRequestedDisease,
+      'correctionRequestStatus': correctionRequestStatus,
+      'correctionRequestedAt': correctionRequestedAt == null
+          ? null
+          : Timestamp.fromDate(correctionRequestedAt!),
     };
   }
 

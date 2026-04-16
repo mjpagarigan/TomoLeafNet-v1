@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/services/leaf_detector_service.dart';
 import 'diagnose_result_screen.dart';
 import 'identify_result_screen.dart';
+import 'widgets/guided_onboarding_tutorial.dart';
 
 class CameraScreen extends StatefulWidget {
   final String scanType;
@@ -258,7 +259,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (_isTomatoLeafDetected) {
       final confidence = _detectionResult == null
           ? ""
-          : " ${( _detectionResult!.confidence * 100).toStringAsFixed(1)}%";
+          : " ${(_detectionResult!.confidence * 100).toStringAsFixed(1)}%";
       return _isFilipino
           ? "Handa nang kumuha.$confidence"
           : "Ready to capture.$confidence";
@@ -413,17 +414,23 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  Future<void> _showTutorial() async {
+    await OnboardingTutorial.showTutorial(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_isCameraInitialized) {
       return const Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF309249))),
+        body:
+            Center(child: CircularProgressIndicator(color: Color(0xFF309249))),
       );
     }
 
     final isIdentify = widget.scanType == 'identify';
-    final modeColor = isIdentify ? const Color(0xFF4CAF50) : const Color(0xFF78909C);
+    final modeColor =
+        isIdentify ? const Color(0xFF4CAF50) : const Color(0xFF78909C);
     final modeLabel = isIdentify ? "Identify Mode" : "Diagnose Mode";
 
     return Scaffold(
@@ -471,14 +478,16 @@ class _CameraScreenState extends State<CameraScreen>
                 Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Row(
-                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                        icon: const Icon(Icons.close,
+                            color: Colors.white, size: 30),
                         onPressed: () => Navigator.pop(context),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 6),
                         decoration: BoxDecoration(
                           color: modeColor.withAlpha(64),
                           borderRadius: BorderRadius.circular(20),
@@ -504,7 +513,22 @@ class _CameraScreenState extends State<CameraScreen>
                           ],
                         ),
                       ),
-                      const Icon(Icons.info_outline, color: Colors.white, size: 30),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withAlpha(56),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: IconButton(
+                          tooltip: 'Tutorial',
+                          onPressed: _showTutorial,
+                          icon: const Icon(
+                            Icons.info_outline,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -571,14 +595,12 @@ class _CameraScreenState extends State<CameraScreen>
                         onTap: _pickFromGallery,
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.white24,
-                            borderRadius: BorderRadius.circular(8)
-                          ),
+                              color: Colors.white24,
+                              borderRadius: BorderRadius.circular(8)),
                           padding: const EdgeInsets.all(12),
                           child: const Icon(Icons.image, color: Colors.white),
                         ),
                       ),
-
                       GestureDetector(
                         onTap: _handleCaptureTap,
                         child: AnimatedContainer(
@@ -596,7 +618,6 @@ class _CameraScreenState extends State<CameraScreen>
                           ),
                         ),
                       ),
-
                       IconButton(
                         icon: Icon(_getFlashIcon(), color: Colors.white),
                         onPressed: _toggleFlash,
@@ -624,8 +645,8 @@ class SquareViewfinderPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final double boxSize = size.width * LeafDetectorService.viewfinderFraction;
     final double left = (size.width - boxSize) / 2;
-    final double top =
-        (size.height - boxSize) / 2 - LeafDetectorService.viewfinderVerticalOffset;
+    final double top = (size.height - boxSize) / 2 -
+        LeafDetectorService.viewfinderVerticalOffset;
     final Rect boxRect = Rect.fromLTWH(left, top, boxSize, boxSize);
 
     // Draw the dark overlay outside the box
@@ -671,7 +692,8 @@ class SquareViewfinderPainter extends CustomPainter {
     final bottomRightPath = Path()
       ..moveTo(left + boxSize, top + boxSize - cornerLength)
       ..lineTo(left + boxSize, top + boxSize - r)
-      ..quadraticBezierTo(left + boxSize, top + boxSize, left + boxSize - r, top + boxSize)
+      ..quadraticBezierTo(
+          left + boxSize, top + boxSize, left + boxSize - r, top + boxSize)
       ..lineTo(left + boxSize - cornerLength, top + boxSize);
     canvas.drawPath(bottomRightPath, cornerPaint);
 

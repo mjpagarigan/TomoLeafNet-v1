@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../app_session.dart';
 import '../../services/auth_service.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
@@ -35,6 +36,9 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
     } on FirebaseAuthException catch (e) {
       if (mounted) _showError(_mapAuthError(e.code));
     } catch (e) {
@@ -48,6 +52,9 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
     try {
       await _authService.signInWithGoogle();
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
     } on FirebaseAuthException catch (e) {
       if (mounted) _showError(_mapAuthError(e.code));
     } catch (e) {
@@ -55,6 +62,10 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _continueAsGuest() {
+    AppSession.instance.continueAsGuest();
   }
 
   void _showError(String message) {
@@ -252,6 +263,31 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                           ),
                         ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: OutlinedButton.icon(
+                            onPressed: _isLoading ? null : _continueAsGuest,
+                            icon: const Icon(Icons.person_outline, size: 20),
+                            label: Text(
+                              'Continue as Guest',
+                              style: GoogleFonts.spaceGrotesk(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: textColor,
+                              side: BorderSide(
+                                color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -265,7 +301,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
-                        'or continue with',
+                        'or sign in with',
                         style: GoogleFonts.spaceGrotesk(fontSize: 12, color: subtextColor),
                       ),
                     ),

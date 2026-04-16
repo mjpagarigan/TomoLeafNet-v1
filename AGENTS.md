@@ -70,13 +70,13 @@ flutter analyze                # Dart static analysis
 - **weather_service.dart** — Location + weather via Cloud Functions proxy (no API key in app binary).
 - **services/tflite_service.dart** — Loads `tomoleafnet_v4.tflite` and `labels.txt`, runs on-device inference with center-crop preprocessing.
 - **services/chat_service.dart** — HTTP client for Plant AI chat, sends messages to the FastAPI backend which forwards to Groq Cloud (Llama 3.1).
-- **services/diagnose_service.dart** — HTTP client for `/diagnose` endpoint, returns AI-generated treatment steps.
+- **services/diagnostic_guide_service.dart** — Local bilingual diagnostic guide content for the supported tomato diseases used by the Diagnose flow.
 - **services/** — `AuthService`, `FirestoreService`, `StorageService`, `CloudFunctionsService` (weather only), `ChatService` (Groq via FastAPI).
 - **models/** — `UserModel`, `ScanModel` — Firestore data models with serialization.
 
 ### AI Backend (backend/)
 
-- **main.py** — FastAPI server bridging Flutter ↔ Groq Cloud. Exposes `/chat` (POST), `/diagnose` (POST), `/health` (GET), and `/` (GET) endpoints. Forwards messages to `llama-3.1-8b-instant` via Groq's OpenAI-compatible REST API at `https://api.groq.com/openai/v1`.
+- **main.py** — FastAPI server bridging Flutter ↔ Groq Cloud. Exposes `/chat` (POST), `/translate` (POST), `/health` (GET), and `/` (GET) endpoints. Forwards chat messages to `llama-3.1-8b-instant` via Groq's OpenAI-compatible REST API at `https://api.groq.com/openai/v1`.
 - **requirements.txt** — Python dependencies: `fastapi`, `uvicorn`, `httpx`, `python-dotenv`.
 - **.env** — Configuration for `GROQ_API_KEY` and `GROQ_MODEL` (default: `gemma2-9b-it`). Gitignored — use `.env.example` as template.
 - **render.yaml** — Render Infrastructure-as-Code config for one-click cloud deployment.

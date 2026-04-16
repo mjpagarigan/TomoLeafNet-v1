@@ -3,17 +3,15 @@ FastAPI backend server for TomoLeafNet Plant AI.
 
 Bridges the Flutter mobile app and Groq Cloud (Llama 3.1 8B Instant).
 Provides endpoints:
-  - /chat      → Plant health chat assistant
-  - /diagnose  → AI-generated treatment steps for detected diseases
+  - /chat       → Plant health chat assistant
   - /translate  → Filipino translation proxy (Google Translate API)
-  - /gradcam   → GradCAM heatmap visualization
+  - /gradcam    → GradCAM heatmap visualization
 
 Usage:
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 """
 
 import os
-import re
 from contextlib import asynccontextmanager
 
 import httpx
@@ -77,23 +75,73 @@ Confidence-Aware Rules:
 
 You only discuss topics related to plant health, agriculture, tomato farming, and the TomoLeafNet app. If asked about unrelated topics, politely redirect the conversation back to plant health."""
 
-VALID_DISEASE_CLASSES = {"Early_Blight", "Healthy", "Leaf_Miner", "Leaf_Mold", "Not_Tomato"}
+UPDATED_TOMO_SYSTEM_PROMPT = """You are Tomo, the in-app Plant AI assistant for TomoLeafNet, a tomato leaf disease detection app built for Filipino farmers and growers.
 
-DIAGNOSE_PROMPT_TEMPLATE = (
-    "You are a plant disease specialist for tomato crops in the Philippines. "
-    "A tomato leaf has been diagnosed with {disease} at {confidence}% confidence. "
-    "This is a real farm field diagnosis. Provide a short, practical, step-by-step "
-    "treatment guide that a Filipino farmer can follow immediately. "
-    "Format as exactly 3 to 5 numbered steps. Keep each step concise and actionable."
-)
+Your job is to help users with tomato plant health, disease identification, treatment, prevention, confidence-aware scan interpretation, and accurate guidance on how to use the TomoLeafNet app.
 
-DIAGNOSE_LOW_CONFIDENCE_TEMPLATE = (
-    "You are a plant disease specialist for tomato crops in the Philippines. "
-    "A tomato leaf scan returned {disease} but with only {confidence}% confidence "
-    "— this result is uncertain. Provide 3 numbered steps: first acknowledge the "
-    "uncertainty, then suggest how to get a clearer scan, and finally give one "
-    "general preventive measure the farmer can apply regardless of the diagnosis."
-)
+You should know the current TomoLeafNet system accurately.
+
+CURRENT APP OVERVIEW
+- TomoLeafNet is a Flutter mobile app with Firebase-backed authentication, Firestore history, cloud image storage, reminders, and a Groq-backed Plant AI chat.
+- The main in-app experiences are Home, Chat, My Plants/history, camera scanning, reminders, and More/settings.
+- Guest mode is supported. In guest mode, chat and camera scans work for the current session, but saved history and cloud-backed scan context are limited.
+- Signed-in users can have scan history saved to Firestore, and offline persistence is enabled for Firestore-backed data.
+
+CURRENT SCANNING FEATURES
+- The app has two scan flows: Identify and Diagnose.
+- Identify focuses on recognizing the tomato leaf condition from the image.
+- Diagnose focuses on treatment-oriented guidance after the scan result.
+- Scans run on-device using a TFLite model.
+- Images are center-cropped and resized to 224x224 before inference.
+- The model currently detects exactly 5 classes:
+  1. Early_Blight
+  2. Healthy
+  3. Leaf_Miner
+  4. Leaf_Mold
+  5. Not_Tomato
+- When referencing model outputs, only refer to these 5 classes.
+- Do not say the app currently detects Late Blight, Septoria, or Bacterial Spot as direct model classes.
+- If a scan result is Not_Tomato, explain that the image likely is not a tomato leaf and ask the user to retake the photo using a real tomato leaf.
+
+CURRENT APP FEATURES YOU SHOULD KNOW
+- Home includes weather, scan search, and an article section.
+- The article section includes web articles and YouTube video placeholders that open externally instead of offline video playback.
+- Chat lets users ask plant-health questions and app-usage questions.
+- My Plants/history lets signed-in users review previous scans.
+- Reminders and notification scheduling are supported.
+- More/settings includes theme controls, tutorial replay, account/profile options, guest mode messaging, and contribution/privacy settings.
+- The app includes a data contribution system where users may opt out of future contributions and can request deletion of contributed images.
+
+PLANT AI BACKEND AWARENESS
+- Plant AI chat runs through a FastAPI backend that forwards requests to the model configured on the server through Groq Cloud.
+- The app sends recent chat history plus recent scan history so you can give context-aware answers.
+- Recent scan history may be empty for guest users, new users, offline cases, or users with no recent scans.
+- You do not have live access to the user's camera, real-time device state, hidden account settings, reminder list, or database records unless they are explicitly provided in the conversation context.
+- Do not claim you can directly see images, inspect screens, open settings, or edit reminders unless that information is actually provided.
+
+TONE AND STYLE
+- Warm, approachable, and encouraging, like a trusted field agronomist
+- Clear and practical, with minimal jargon unless the user asks for technical detail
+- Farmer-friendly, action-oriented, and empathetic
+- Concise and useful rather than overly long
+
+CONFIDENCE-AWARE BEHAVIOR
+- Always use the actual scan history context provided below when answering questions about the user's plants or recent scans.
+- If confidence is 80% or above, you may speak with more confidence and give direct next steps.
+- If confidence is 60% to 79%, acknowledge some uncertainty and recommend monitoring.
+- If confidence is 40% to 59%, be cautious and recommend retaking the photo before acting.
+- If confidence is below 40%, do not give definitive treatment advice based on that scan alone and strongly recommend a clearer retake.
+
+APP HELP GUIDELINES
+- If the user asks what the app can do, explain the real current features listed above.
+- If the user asks about something the app does not currently support, say so honestly and offer the closest available workflow.
+- If the user asks how to get better scan results, recommend clearer lighting, close framing, visible symptoms, and retaking the image if needed.
+- If the user asks about saved history, reminders, settings, or contributions, explain them accurately without pretending to have direct account access unless that information is present in context.
+
+TOPIC BOUNDARIES
+- You may discuss tomato farming, plant health, plant disease prevention and treatment, and TomoLeafNet app usage.
+- If asked about unrelated topics, politely redirect back to plant health or app-related help.
+"""
 
 # ── Shared HTTP client (reused across requests) ──────────────────────
 
@@ -104,7 +152,7 @@ async def lifespan(app: FastAPI):
     app.state.http_client = httpx.AsyncClient(timeout=60.0)
 
     # Reminder notification subsystem (best-effort — failures here must not
-    # take down the chat/diagnose endpoints).
+    # take down the chat endpoints).
     try:
         fcm_service.init_firebase_admin()
         scheduler_service.start_scheduler()
@@ -124,7 +172,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="TomoLeafNet Plant AI Backend",
-    description="Bridges Flutter ↔ Groq Cloud for plant health chat and diagnosis.",
+    description="Bridges Flutter ↔ Groq Cloud for plant health chat.",
     version="3.0.0",
     lifespan=lifespan,
 )
@@ -165,15 +213,6 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
-
-
-class DiagnoseRequest(BaseModel):
-    disease: str
-    confidence: float
-
-
-class DiagnoseResponse(BaseModel):
-    steps: list[str]
 
 
 class TranslateRequest(BaseModel):
@@ -244,7 +283,7 @@ async def health_check():
 async def chat(request: ChatRequest):
     """
     Accept a user message + conversation history from the Flutter app,
-    forward it to Groq Cloud (Llama 3.1), and return the AI response.
+    forward it to Groq Cloud, and return the AI response.
     """
     if not GROQ_API_KEY:
         raise HTTPException(
@@ -258,7 +297,7 @@ async def chat(request: ChatRequest):
 
     # Inject the user's recent scan history into the Tomo persona prompt
     enriched_system_prompt = (
-        f"{TOMO_SYSTEM_PROMPT}\n\n"
+        f"{UPDATED_TOMO_SYSTEM_PROMPT}\n\n"
         f"{_build_scan_history_block(recent_scans)}"
     )
 
@@ -301,141 +340,6 @@ async def chat(request: ChatRequest):
             reply = "Sorry, I could not generate a response."
         return ChatResponse(reply=reply)
 
-    except httpx.ConnectError:
-        raise HTTPException(
-            status_code=503,
-            detail="Cannot connect to Groq Cloud. Please check your internet connection.",
-        )
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504,
-            detail="Groq took too long to respond. Please try again.",
-        )
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Groq returned an error: {e.response.text}",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Unexpected error: {str(e)}",
-        )
-
-
-@app.post("/diagnose", response_model=DiagnoseResponse)
-async def diagnose(request: DiagnoseRequest):
-    """
-    Accept a detected disease name and confidence score from the Flutter app,
-    send a structured prompt to Groq Cloud (Llama 3.1), and return
-    AI-generated treatment steps.
-    """
-    if not GROQ_API_KEY:
-        raise HTTPException(
-            status_code=500,
-            detail="GROQ_API_KEY is not configured on the server.",
-        )
-
-    client: httpx.AsyncClient = app.state.http_client
-
-    normalized_disease = request.disease.strip().replace(" ", "_")
-    display_disease = normalized_disease.replace("_", " ")
-
-    # Reject unknown disease classes
-    if normalized_disease not in VALID_DISEASE_CLASSES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown disease class: {request.disease}. "
-                   f"Valid classes: {', '.join(sorted(VALID_DISEASE_CLASSES))}",
-        )
-
-    # Healthy and Not_Tomato don't need treatment
-    if normalized_disease == "Healthy":
-        return DiagnoseResponse(steps=[
-            "Your plant looks healthy! Continue regular watering and monitoring.",
-            "Inspect leaves weekly for early signs of discoloration or spots.",
-            "Maintain good air circulation between plants to prevent disease.",
-        ])
-
-    if normalized_disease == "Not_Tomato":
-        return DiagnoseResponse(steps=[
-            "This image does not appear to be a tomato leaf.",
-            "Please retake the photo with a clear view of a tomato leaf.",
-            "Ensure the leaf fills most of the frame with good lighting.",
-        ])
-
-    # Use low-confidence prompt when below 60%
-    if request.confidence < 60.0:
-        prompt = DIAGNOSE_LOW_CONFIDENCE_TEMPLATE.format(
-            disease=display_disease,
-            confidence=round(request.confidence, 1),
-        )
-    else:
-        prompt = DIAGNOSE_PROMPT_TEMPLATE.format(
-            disease=display_disease,
-            confidence=round(request.confidence, 1),
-        )
-
-    messages = [
-        {"role": "system", "content": "You are a plant disease treatment specialist."},
-        {"role": "user", "content": prompt},
-    ]
-
-    payload = {
-        "model": GROQ_MODEL,
-        "messages": messages,
-        "stream": False,
-        "temperature": 0.4,
-        "max_tokens": 400,
-    }
-
-    try:
-        resp = await client.post(
-            f"{GROQ_BASE_URL}/chat/completions",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json",
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        choices = data.get("choices", [])
-        if not choices:
-            raise HTTPException(
-                status_code=500,
-                detail="Groq returned no response.",
-            )
-
-        raw_text = choices[0].get("message", {}).get("content", "").strip()
-        if not raw_text:
-            raise HTTPException(
-                status_code=500,
-                detail="Groq returned an empty response.",
-            )
-
-        # Parse numbered steps from the response
-        steps = _parse_numbered_steps(raw_text)
-
-        if not steps:
-            # Fallback: split by newlines and filter non-empty
-            steps = [
-                line.strip()
-                for line in raw_text.split("\n")
-                if line.strip() and len(line.strip()) > 5
-            ]
-
-        # Ensure we return 3-5 steps
-        if len(steps) > 5:
-            steps = steps[:5]
-
-        if not steps:
-            steps = [raw_text]
-
-        return DiagnoseResponse(steps=steps)
-
-    except HTTPException:
-        raise
     except httpx.ConnectError:
         raise HTTPException(
             status_code=503,
@@ -546,22 +450,3 @@ def _build_scan_history_block(scans: list[ScanHistoryItem]) -> str:
         "treatment advice based on it — instead recommend retaking the photo."
     )
     return "\n".join(lines)
-
-
-def _parse_numbered_steps(text: str) -> list[str]:
-    """
-    Parse numbered steps from LLM output.
-    Handles formats like:
-      1. Step text
-      1) Step text
-      1: Step text
-    """
-    pattern = r"^\s*\d+[\.\)\:]\s*(.+)"
-    steps = []
-    for line in text.split("\n"):
-        match = re.match(pattern, line.strip())
-        if match:
-            step_text = match.group(1).strip()
-            if step_text:
-                steps.append(step_text)
-    return steps

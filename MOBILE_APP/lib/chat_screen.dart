@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import 'app_session.dart';
 import 'models/scan_model.dart';
 import 'services/chat_service.dart';
 import 'services/firestore_service.dart';
@@ -18,7 +20,9 @@ class ChatMessage {
 }
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  const ChatScreen({super.key, this.tutorialInputKey});
+
+  final GlobalKey? tutorialInputKey;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -48,11 +52,14 @@ class _ChatScreenState extends State<ChatScreen> {
   ];
 
   bool get _isAuthenticated => FirebaseAuth.instance.currentUser != null;
+  bool get _isGuest => AppSession.instance.isGuest;
+  bool get _canChat => _isAuthenticated || _isGuest;
 
   /// Fetch the user's 5 most recent scans from Firestore and format them
   /// as the payload Tomo's backend expects. Returns an empty list on
   /// failure so the chat still works offline or for brand-new users.
   Future<List<Map<String, dynamic>>> _fetchScanHistoryPayload() async {
+    if (_isGuest) return const [];
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const [];
     try {
@@ -107,7 +114,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _sendMessage(String text) async {
-    if (text.trim().isEmpty || !_isAuthenticated) return;
+    if (text.trim().isEmpty || !_canChat) return;
 
     final userMessage = ChatMessage(
       text: text.trim(),
@@ -191,13 +198,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<AppSession>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
+      backgroundColor:
+          isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
       appBar: AppBar(
-        title: Text('Tomo — Plant Assistant', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
+        title: Text('Tomo — Plant Assistant',
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -210,50 +220,37 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
         ],
       ),
-      body: !_isAuthenticated ? _buildNoAuthMessage(theme) : _buildChat(theme, isDark),
-    );
-  }
-
-  Widget _buildNoAuthMessage(ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.eco, size: 80, color: const Color(0xFF309249).withAlpha(150)),
-            const SizedBox(height: 24),
-            Text(
-              'Tomo — Plant Assistant',
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Please sign in to chat with Tomo about your plants.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 14,
-                color: theme.colorScheme.onSurface.withAlpha(150),
-                height: 1.5,
-              ),
-            ),
-          ],
-        ),
-      ),
+      body: _buildChat(theme, isDark),
     );
   }
 
   Widget _buildChat(ThemeData theme, bool isDark) {
-    final cardColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF);
-    final badgeBgColor = isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5);
+    final cardColor =
+        isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF);
+    final badgeBgColor =
+        isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5);
     final shadowOpacity = isDark ? 0.55 : 0.18;
 
     return Column(
       children: [
+        if (_isGuest)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text(
+              'Guest mode: chat is available, but messages and scan context are not saved.',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white70 : const Color(0xFF206020),
+              ),
+            ),
+          ),
         // Suggested questions (show only when no messages)
         if (_messages.isEmpty)
           Container(
@@ -276,7 +273,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     return GestureDetector(
                       onTap: () => _sendMessage(q),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
                           color: badgeBgColor,
                           borderRadius: BorderRadius.circular(12),
@@ -285,7 +283,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           q,
                           style: GoogleFonts.spaceGrotesk(
                             fontSize: 12,
-                            color: isDark ? Colors.white70 : const Color(0xFF206020),
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF206020),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -345,7 +345,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 )
               : ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   itemCount: _messages.length + (_isTyping ? 1 : 0),
                   itemBuilder: (context, index) {
                     if (index == _messages.length && _isTyping) {
@@ -358,6 +359,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
         // Input field
         Container(
+          key: widget.tutorialInputKey,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           color: Colors.transparent,
           child: SafeArea(
@@ -393,7 +395,8 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                             filled: true,
                             fillColor: cardColor,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 14),
                           ),
                           textInputAction: TextInputAction.send,
                           onSubmitted: _sendMessage,
@@ -417,13 +420,14 @@ class _ChatScreenState extends State<ChatScreen> {
                             )
                           ],
                         ),
-                        child: const Icon(Icons.send, color: Colors.white, size: 22),
+                        child: const Icon(Icons.send,
+                            color: Colors.white, size: 22),
                       ),
                     ),
                   ],
                 ),
                 if (MediaQuery.of(context).viewInsets.bottom == 0)
-                   const SizedBox(height: 12),
+                  const SizedBox(height: 12),
               ],
             ),
           ),
@@ -432,12 +436,14 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildMessageBubble(ChatMessage message, bool isDark, ThemeData theme) {
+  Widget _buildMessageBubble(
+      ChatMessage message, bool isDark, ThemeData theme) {
     final isUser = message.isUser;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isUser) ...[
@@ -450,14 +456,18 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment:
+                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: isUser
                         ? const Color(0xFF309249)
-                        : (isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF0F0F0)),
+                        : (isDark
+                            ? const Color(0xFF2C2C2C)
+                            : const Color(0xFFF0F0F0)),
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(8),
                       topRight: const Radius.circular(8),
@@ -465,12 +475,23 @@ class _ChatScreenState extends State<ChatScreen> {
                       bottomRight: Radius.circular(isUser ? 4 : 18),
                     ),
                   ),
-                  child: Text(
-                    message.text,
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 14,
-                      color: isUser ? Colors.white : theme.colorScheme.onSurface,
-                      height: 1.4,
+                  child: RichText(
+                    text: TextSpan(
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 14,
+                        color:
+                            isUser ? Colors.white : theme.colorScheme.onSurface,
+                        height: 1.4,
+                      ),
+                      children: _parseMarkdown(
+                          message.text,
+                          GoogleFonts.spaceGrotesk(
+                            fontSize: 14,
+                            color: isUser
+                                ? Colors.white
+                                : theme.colorScheme.onSurface,
+                            height: 1.4,
+                          )),
                     ),
                   ),
                 ),
@@ -520,6 +541,52 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  List<TextSpan> _parseMarkdown(String text, TextStyle baseStyle) {
+    final spans = <TextSpan>[];
+    final boldItalicRegex = RegExp(r'\*\*\*(.+?)\*\*\*');
+    final boldRegex = RegExp(r'\*\*(.+?)\*\*');
+    final italicRegex = RegExp(r'\*(.+?)\*');
+    final combined = RegExp(r'\*{1,3}(.+?)\*{1,3}');
+
+    int cursor = 0;
+    for (final match in combined.allMatches(text)) {
+      if (match.start > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, match.start)));
+      }
+      final raw = match.group(0)!;
+      final inner = match.group(1)!;
+
+      if (boldItalicRegex.hasMatch(raw)) {
+        spans.add(TextSpan(
+          text: inner,
+          style: baseStyle.copyWith(
+            fontWeight: FontWeight.bold,
+            fontStyle: FontStyle.italic,
+          ),
+        ));
+      } else if (boldRegex.hasMatch(raw)) {
+        spans.add(TextSpan(
+          text: inner,
+          style: baseStyle.copyWith(fontWeight: FontWeight.bold),
+        ));
+      } else if (italicRegex.hasMatch(raw)) {
+        spans.add(TextSpan(
+          text: inner,
+          style: baseStyle.copyWith(fontStyle: FontStyle.italic),
+        ));
+      } else {
+        spans.add(TextSpan(text: raw));
+      }
+      cursor = match.end;
+    }
+
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor)));
+    }
+
+    return spans.isEmpty ? [TextSpan(text: text)] : spans;
+  }
+
   String _formatTime(DateTime dt) {
     final h = dt.hour.toString().padLeft(2, '0');
     final m = dt.minute.toString().padLeft(2, '0');
@@ -534,7 +601,8 @@ class _TypingDots extends StatefulWidget {
   State<_TypingDots> createState() => _TypingDotsState();
 }
 
-class _TypingDotsState extends State<_TypingDots> with TickerProviderStateMixin {
+class _TypingDotsState extends State<_TypingDots>
+    with TickerProviderStateMixin {
   late AnimationController _controller;
 
   @override
@@ -571,7 +639,8 @@ class _TypingDotsState extends State<_TypingDots> with TickerProviderStateMixin 
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF309249).withAlpha((150 + (t * 105)).toInt().clamp(0, 255)),
+                    color: const Color(0xFF309249)
+                        .withAlpha((150 + (t * 105)).toInt().clamp(0, 255)),
                     shape: BoxShape.circle,
                   ),
                 ),

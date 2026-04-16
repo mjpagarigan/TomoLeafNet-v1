@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../app_session.dart';
 import 'community_contribution_service.dart';
 
 class AuthService {
@@ -29,6 +30,7 @@ class AuthService {
       await user.updateDisplayName(name);
       await _createUserProfile(user, name: name);
       await CommunityContributionService.instance.processPendingQueue();
+      AppSession.instance.setAuthenticated();
     }
     return user;
   }
@@ -43,6 +45,7 @@ class AuthService {
       password: password,
     );
     await CommunityContributionService.instance.processPendingQueue();
+    AppSession.instance.setAuthenticated();
     return credential.user;
   }
 
@@ -69,6 +72,7 @@ class AuthService {
       );
     }
     await CommunityContributionService.instance.processPendingQueue();
+    AppSession.instance.setAuthenticated();
     return user;
   }
 
@@ -81,6 +85,7 @@ class AuthService {
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     await _auth.signOut();
+    AppSession.instance.setSignedOut();
   }
 
   /// Create user profile document in Firestore

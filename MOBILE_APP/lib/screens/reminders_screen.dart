@@ -76,11 +76,14 @@ class _RemindersScreenState extends State<RemindersScreen>
                 children: [
                   TextButton.icon(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.chevron_left, color: accent, size: 28),
+                    icon:
+                        const Icon(Icons.chevron_left, color: accent, size: 28),
                     label: Text(
                       'Back',
                       style: GoogleFonts.spaceGrotesk(
-                          color: accent, fontWeight: FontWeight.w600, fontSize: 16),
+                          color: accent,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16),
                     ),
                     style: TextButton.styleFrom(
                       padding: EdgeInsets.zero,
@@ -96,7 +99,8 @@ class _RemindersScreenState extends State<RemindersScreen>
                         color: accent,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.add, color: Colors.white, size: 24),
+                      child:
+                          const Icon(Icons.add, color: Colors.white, size: 24),
                     ),
                   ),
                 ],
@@ -126,14 +130,18 @@ class _RemindersScreenState extends State<RemindersScreen>
                 child: TabBar(
                   controller: _tabController,
                   indicator: BoxDecoration(
-                    color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE8E8E8),
+                    color: isDark
+                        ? const Color(0xFF2A2A2A)
+                        : const Color(0xFFE8E8E8),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   indicatorSize: TabBarIndicatorSize.tab,
                   dividerColor: Colors.transparent,
                   labelColor: isDark ? Colors.white : Colors.black87,
-                  unselectedLabelColor: isDark ? Colors.grey[500] : Colors.grey[600],
-                  labelStyle: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                  unselectedLabelColor:
+                      isDark ? Colors.grey[500] : Colors.grey[600],
+                  labelStyle:
+                      GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
                   tabs: const [Tab(text: 'Today'), Tab(text: 'Upcoming')],
                 ),
               ),
@@ -357,13 +365,14 @@ class _TodayTab extends StatelessWidget {
 
 class _UpcomingTab extends StatelessWidget {
   final List<ReminderModel> reminders;
+
   const _UpcomingTab({required this.reminders});
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final tomorrow = DateTime(now.year, now.month, now.day)
-        .add(const Duration(days: 1));
+    final tomorrow =
+        DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
 
     // Build a flat list of (date, reminder) up to 14 days ahead.
     final entries = <_UpcomingEntry>[];
@@ -534,8 +543,7 @@ class _TodayCard extends StatelessWidget {
       reminder.notifyTime.hour,
       reminder.notifyTime.minute,
     );
-    final isExpired =
-        scheduledToday.isBefore(now) && !reminder.isCompleted;
+    final isExpired = scheduledToday.isBefore(now) && !reminder.isCompleted;
 
     return InkWell(
       onTap: () => showReminderEditorSheet(
@@ -580,6 +588,43 @@ class _TodayCard extends StatelessWidget {
                   ],
                 ),
               ),
+              PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.more_horiz,
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                onSelected: (value) async {
+                  if (value == 'edit') {
+                    await showReminderEditorSheet(
+                      context: context,
+                      category: reminder.category,
+                      existing: reminder,
+                    );
+                    return;
+                  }
+
+                  await _deleteReminderWithConfirmation(context, reminder);
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem<String>(
+                    value: 'edit',
+                    child: Text(
+                      'Edit reminder',
+                      style: GoogleFonts.spaceGrotesk(),
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'delete',
+                    child: Text(
+                      'Delete reminder',
+                      style: GoogleFonts.spaceGrotesk(color: Colors.red),
+                    ),
+                  ),
+                ],
+              ),
               if (showCheckbox)
                 GestureDetector(
                   onTap: () async {
@@ -615,7 +660,11 @@ class _TodayCard extends StatelessWidget {
 class _UpcomingCard extends StatelessWidget {
   final ReminderCategory category;
   final ReminderModel reminder;
-  const _UpcomingCard({required this.category, required this.reminder});
+
+  const _UpcomingCard({
+    required this.category,
+    required this.reminder,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -623,56 +672,117 @@ class _UpcomingCard extends StatelessWidget {
     final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
     const accent = Color(0xFF309249);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.4 : 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
+    return InkWell(
+      onTap: () => showReminderEditorSheet(
+        context: context,
+        category: reminder.category,
+        existing: reminder,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(category.icon, color: accent, size: 22),
-              const SizedBox(width: 10),
-              Text(
-                category.label.toUpperCase(),
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.0,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _PlantThumb(imageUrl: reminder.plantImageUrl),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  reminder.plantName,
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black87,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(isDark ? 0.4 : 0.08),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(category.icon, color: accent, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    category.label.toUpperCase(),
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        ],
+                PopupMenuButton<String>(
+                  icon: Icon(
+                    Icons.more_horiz,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  onSelected: (value) async {
+                    if (value == 'edit') {
+                      await showReminderEditorSheet(
+                        context: context,
+                        category: reminder.category,
+                        existing: reminder,
+                      );
+                      return;
+                    }
+
+                    await _deleteReminderWithConfirmation(context, reminder);
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem<String>(
+                      value: 'edit',
+                      child: Text(
+                        'Edit reminder',
+                        style: GoogleFonts.spaceGrotesk(),
+                      ),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'delete',
+                      child: Text(
+                        'Delete reminder',
+                        style: GoogleFonts.spaceGrotesk(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _PlantThumb(imageUrl: reminder.plantImageUrl),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        reminder.plantName,
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${reminder.notifyTime.hour.toString().padLeft(2, '0')}:${reminder.notifyTime.minute.toString().padLeft(2, '0')}',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -731,7 +841,8 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 64, color: isDark ? Colors.grey[700] : Colors.grey[300]),
+            Icon(icon,
+                size: 64, color: isDark ? Colors.grey[700] : Colors.grey[300]),
             const SizedBox(height: 16),
             Text(
               title,
@@ -758,6 +869,61 @@ class _EmptyState extends StatelessWidget {
 }
 
 // ─── Editor sheet (Add / Edit) ────────────────────────────────────────
+
+Future<bool> _deleteReminderWithConfirmation(
+  BuildContext context,
+  ReminderModel reminder,
+) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return false;
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text('Delete reminder?', style: GoogleFonts.spaceGrotesk()),
+      content: Text(
+        'This action cannot be undone.',
+        style: GoogleFonts.spaceGrotesk(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text('Cancel', style: GoogleFonts.spaceGrotesk()),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(
+            'Delete',
+            style: GoogleFonts.spaceGrotesk(color: Colors.red),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed != true) return false;
+
+  await ReminderService().deleteReminder(uid, reminder.reminderId);
+  await LocalNotificationService.instance
+      .cancelForReminder(reminder.reminderId);
+  await RemindersBackend.instance.cancel(
+    uid: uid,
+    reminderId: reminder.reminderId,
+  );
+
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Reminder deleted.',
+          style: GoogleFonts.spaceGrotesk(),
+        ),
+      ),
+    );
+  }
+
+  return true;
+}
 
 Future<bool> showReminderEditorSheet({
   required BuildContext context,
@@ -834,7 +1000,12 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
   late TimeOfDay _notifyTime;
   String? _timeValidationError;
 
-  static const List<String> _waterOptions = ['1 cup', '2 cups', '500 ml', '1 L'];
+  static const List<String> _waterOptions = [
+    '1 cup',
+    '2 cups',
+    '500 ml',
+    '1 L'
+  ];
 
   @override
   void initState() {
@@ -878,15 +1049,20 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
   void _validateDateTime() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final selectedDay = DateTime(_startDate.year, _startDate.month, _startDate.day);
+    final selectedDay =
+        DateTime(_startDate.year, _startDate.month, _startDate.day);
 
     if (selectedDay.isAtSameMomentAs(today)) {
       final selectedTime = DateTime(
-        now.year, now.month, now.day,
-        _notifyTime.hour, _notifyTime.minute,
+        now.year,
+        now.month,
+        now.day,
+        _notifyTime.hour,
+        _notifyTime.minute,
       );
       if (selectedTime.isBefore(now)) {
-        _timeValidationError = "Please choose a future time for today's reminder.";
+        _timeValidationError =
+            "Please choose a future time for today's reminder.";
         return;
       }
     }
@@ -924,7 +1100,9 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                       child: Text(
                         'Cancel',
                         style: GoogleFonts.spaceGrotesk(
-                            color: accent, fontSize: 16, fontWeight: FontWeight.w600),
+                            color: accent,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600),
                       ),
                     ),
                     Expanded(
@@ -944,7 +1122,9 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                       child: Text(
                         'Done',
                         style: GoogleFonts.spaceGrotesk(
-                            color: _timeValidationError == null ? accent : Colors.grey,
+                            color: _timeValidationError == null
+                                ? accent
+                                : Colors.grey,
                             fontSize: 16,
                             fontWeight: FontWeight.bold),
                       ),
@@ -978,7 +1158,8 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                         _field(
                           fieldBg,
                           isDark,
-                          leading: const Icon(Icons.water_drop, color: Colors.white70),
+                          leading: const Icon(Icons.water_drop,
+                              color: Colors.white70),
                           label: 'Water amount',
                           trailing: Text(
                             _waterAmount,
@@ -994,7 +1175,8 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                       _field(
                         fieldBg,
                         isDark,
-                        leading: const Icon(Icons.repeat, color: Colors.white70),
+                        leading:
+                            const Icon(Icons.repeat, color: Colors.white70),
                         label: 'Repeat',
                         trailing: Text(
                           _repeat.label,
@@ -1009,7 +1191,8 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                       _field(
                         fieldBg,
                         isDark,
-                        leading: const Icon(Icons.calendar_today, color: Colors.white70),
+                        leading: const Icon(Icons.calendar_today,
+                            color: Colors.white70),
                         label: 'Start Day',
                         trailing: Text(
                           DateFormat('d MMMM').format(_startDate),
@@ -1034,7 +1217,8 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                       _field(
                         fieldBg,
                         isDark,
-                        leading: const Icon(Icons.notifications, color: Colors.white70),
+                        leading: const Icon(Icons.notifications,
+                            color: Colors.white70),
                         label: 'Notify',
                         trailing: Text(
                           '${_notifyTime.hour.toString().padLeft(2, '0')}:${_notifyTime.minute.toString().padLeft(2, '0')}',
@@ -1090,7 +1274,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                               ),
                             ),
                             child: Text(
-                              'Delete Reminders',
+                              'Delete Reminder',
                               style: GoogleFonts.spaceGrotesk(
                                 color: Colors.red,
                                 fontWeight: FontWeight.bold,
@@ -1132,7 +1316,8 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
             if (leading != null) ...[
               IconTheme(
                 data: IconThemeData(
-                    color: isDark ? Colors.white70 : Colors.grey[700], size: 22),
+                    color: isDark ? Colors.white70 : Colors.grey[700],
+                    size: 22),
                 child: leading,
               ),
               const SizedBox(width: 14),
@@ -1196,7 +1381,8 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                 ctx,
                 const _PickedPlant('Tomato', null),
               ),
-              leading: const Icon(Icons.local_florist, color: Color(0xFF309249)),
+              leading:
+                  const Icon(Icons.local_florist, color: Color(0xFF309249)),
               title: Text(
                 'Tomato',
                 style: GoogleFonts.spaceGrotesk(
@@ -1432,35 +1618,11 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
   }
 
   Future<void> _onDelete() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null || widget.existing == null) return;
+    final existing = widget.existing;
+    if (existing == null) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete reminder?', style: GoogleFonts.spaceGrotesk()),
-        content: Text('This action cannot be undone.',
-            style: GoogleFonts.spaceGrotesk()),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: GoogleFonts.spaceGrotesk())),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Delete',
-                  style: GoogleFonts.spaceGrotesk(color: Colors.red))),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    await _service.deleteReminder(uid, widget.existing!.reminderId);
-    await LocalNotificationService.instance
-        .cancelForReminder(widget.existing!.reminderId);
-    await RemindersBackend.instance
-        .cancel(uid: uid, reminderId: widget.existing!.reminderId);
-
-    if (mounted) Navigator.pop(context);
+    final deleted = await _deleteReminderWithConfirmation(context, existing);
+    if (deleted && mounted) Navigator.pop(context);
   }
 }
 

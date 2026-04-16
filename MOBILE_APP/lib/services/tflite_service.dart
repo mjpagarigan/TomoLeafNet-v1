@@ -13,6 +13,13 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 /// Singleton — models are loaded once and shared across all result screens,
 /// avoiding repeated 3MB+ asset loads every time a scan result is displayed.
 class TFLiteService {
+  static const List<String> supportedLabels = [
+    'Early_Blight',
+    'Healthy',
+    'Leaf_Miner',
+    'Leaf_Mold',
+    'Not_Tomato',
+  ];
   // ── Singleton ──────────────────────────────────────────────────────
   static final TFLiteService _instance = TFLiteService._internal();
   factory TFLiteService() => _instance;
@@ -363,6 +370,11 @@ class TFLiteService {
       'Not_Tomato': 'Not a Tomato Leaf',
     };
     return names[label] ?? label.replaceAll('_', ' ');
+  }
+
+  static int getLabelIndex(String label) {
+    final index = supportedLabels.indexOf(label);
+    return index >= 0 ? index : 0;
   }
 
   /// Stable threshold-state identifiers for analytics and contribution routing.

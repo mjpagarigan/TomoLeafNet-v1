@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'app_session.dart';
 import 'models/contribution_stats.dart';
 import 'models/user_model.dart';
 import 'services/firestore_service.dart';
 import 'theme_provider.dart';
 import 'services/auth_service.dart';
-import 'widgets/onboarding_tutorial.dart';
+import 'screens/auth/login_screen.dart';
+import 'screens/auth/register_screen.dart';
+import 'widgets/guided_onboarding_tutorial.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -17,19 +20,107 @@ class MoreScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final session = Provider.of<AppSession>(context);
+    final isGuest = session.isGuest;
     final user = FirebaseAuth.instance.currentUser;
     final firestoreService = FirestoreService();
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('More', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
+        title: Text('More',
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
         centerTitle: true,
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          if (isGuest) ...[
+            _buildSectionHeader('Guest Mode', theme),
+            const SizedBox(height: 12),
+            _buildSettingsCard(
+              theme: theme,
+              isDark: isDark,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'You are using TomoLeafNet as a guest.',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Chat and camera-based scans work in this session, but history and cloud saving are disabled until you sign in.',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 13,
+                          height: 1.5,
+                          color: theme.colorScheme.onSurface.withAlpha(140),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF309249),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Sign In',
+                        style: GoogleFonts.spaceGrotesk(
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const RegisterScreen()),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: Text(
+                        'Create Account',
+                        style: GoogleFonts.spaceGrotesk(
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 28),
+          ],
+
           // --- User Profile Section ---
-          if (user != null) ...[
+          if (user != null && !isGuest) ...[
             _buildSectionHeader('Profile', theme),
             const SizedBox(height: 12),
             _buildSettingsCard(
@@ -37,7 +128,8 @@ class MoreScreen extends StatelessWidget {
               isDark: isDark,
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   child: Row(
                     children: [
                       CircleAvatar(
@@ -48,7 +140,8 @@ class MoreScreen extends StatelessWidget {
                             : null,
                         child: user.photoURL == null
                             ? Text(
-                                (user.displayName ?? user.email ?? '?')[0].toUpperCase(),
+                                (user.displayName ?? user.email ?? '?')[0]
+                                    .toUpperCase(),
                                 style: GoogleFonts.spaceGrotesk(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
@@ -75,7 +168,8 @@ class MoreScreen extends StatelessWidget {
                               user.email ?? '',
                               style: GoogleFonts.spaceGrotesk(
                                 fontSize: 13,
-                                color: theme.colorScheme.onSurface.withAlpha(120),
+                                color:
+                                    theme.colorScheme.onSurface.withAlpha(120),
                               ),
                             ),
                           ],
@@ -89,7 +183,7 @@ class MoreScreen extends StatelessWidget {
             const SizedBox(height: 28),
           ],
 
-          if (user != null) ...[
+          if (user != null && !isGuest) ...[
             _buildSectionHeader('Manage Data Contributions', theme),
             const SizedBox(height: 12),
             StreamBuilder<UserModel?>(
@@ -99,8 +193,11 @@ class MoreScreen extends StatelessWidget {
                 return StreamBuilder<ContributionStats>(
                   stream: firestoreService.getContributionStatsStream(user.uid),
                   builder: (context, statsSnapshot) {
-                    final stats = statsSnapshot.data ?? const ContributionStats();
-                    final contributionOptOut = profile?.contributionOptOut ?? false;
+                    final stats =
+                        statsSnapshot.data ?? const ContributionStats();
+                    final contributionOptOut =
+                        profile?.contributionOptOut ?? false;
+                    final allowFutureContributions = !contributionOptOut;
 
                     return _buildSettingsCard(
                       theme: theme,
@@ -120,10 +217,13 @@ class MoreScreen extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 14),
-                              _buildStatLine(theme, 'Images Contributed', stats.total),
+                              _buildStatLine(
+                                  theme, 'Images Contributed', stats.total),
                               _buildStatLine(theme, 'Approved', stats.approved),
-                              _buildStatLine(theme, 'Pending Review', stats.pendingReview),
-                              _buildStatLine(theme, 'Used in Training', stats.usedInTraining),
+                              _buildStatLine(
+                                  theme, 'Pending Review', stats.pendingReview),
+                              _buildStatLine(theme, 'Used in Training',
+                                  stats.usedInTraining),
                             ],
                           ),
                         ),
@@ -132,29 +232,33 @@ class MoreScreen extends StatelessWidget {
                           height: 1,
                         ),
                         SwitchListTile(
-                          value: contributionOptOut,
+                          value: allowFutureContributions,
                           activeColor: const Color(0xFF309249),
                           title: Text(
-                            'Opt Out of Future Contributions',
+                            'Allow Future Contributions',
                             style: GoogleFonts.spaceGrotesk(
                               fontWeight: FontWeight.w600,
                               color: theme.colorScheme.onSurface,
                             ),
                           ),
                           subtitle: Text(
-                            contributionOptOut
-                                ? 'We will stop asking you to donate future scans.'
-                                : 'Allow the app to ask before donating high-quality scans.',
+                            allowFutureContributions
+                                ? 'Allow the app to ask before donating high-quality scans.'
+                                : 'We will stop asking you to donate future scans.',
                             style: GoogleFonts.spaceGrotesk(
                               fontSize: 12,
                               color: theme.colorScheme.onSurface.withAlpha(120),
                             ),
                           ),
-                          onChanged: (value) =>
-                              _setContributionOptOut(context, user.uid, value),
+                          onChanged: (value) => _setContributionOptOut(
+                            context,
+                            user.uid,
+                            !value,
+                          ),
                         ),
                         ListTile(
-                          leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                          leading: const Icon(Icons.delete_outline,
+                              color: Colors.redAccent),
                           title: Text(
                             'Request Image Deletion',
                             style: GoogleFonts.spaceGrotesk(
@@ -172,10 +276,10 @@ class MoreScreen extends StatelessWidget {
                           onTap: stats.total == 0
                               ? null
                               : () => _requestContributionDeletion(
-                                  context,
-                                  firestoreService,
-                                  user.uid,
-                                ),
+                                    context,
+                                    firestoreService,
+                                    user.uid,
+                                  ),
                         ),
                       ],
                     );
@@ -237,17 +341,23 @@ class MoreScreen extends StatelessWidget {
             isDark: isDark,
             children: [
               _buildInfoRow(theme, 'App Name', 'TomoLeafNet'),
-              Divider(color: theme.colorScheme.onSurface.withAlpha(20), height: 1),
+              Divider(
+                  color: theme.colorScheme.onSurface.withAlpha(20), height: 1),
               _buildInfoRow(theme, 'Version', '1.0.0'),
-              Divider(color: theme.colorScheme.onSurface.withAlpha(20), height: 1),
+              Divider(
+                  color: theme.colorScheme.onSurface.withAlpha(20), height: 1),
               _buildInfoRow(theme, 'Model', 'TomoLeafNet v4 MobileNetV3'),
-              Divider(color: theme.colorScheme.onSurface.withAlpha(20), height: 1),
+              Divider(
+                  color: theme.colorScheme.onSurface.withAlpha(20), height: 1),
               _buildInfoRow(theme, 'Classes', '5 tomato leaf conditions'),
+              Divider(
+                  color: theme.colorScheme.onSurface.withAlpha(20), height: 1),
+              _buildClassDescriptions(theme, isDark),
             ],
           ),
 
           // --- Sign Out ---
-          if (user != null) ...[
+          if (user != null && !isGuest) ...[
             const SizedBox(height: 28),
             _buildSectionHeader('Account', theme),
             const SizedBox(height: 12),
@@ -259,6 +369,33 @@ class MoreScreen extends StatelessWidget {
                 icon: const Icon(Icons.logout, size: 20),
                 label: Text(
                   'Sign Out',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ),
+          ] else if (isGuest) ...[
+            const SizedBox(height: 28),
+            _buildSectionHeader('Guest Session', theme),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: () => AppSession.instance.setSignedOut(),
+                icon: const Icon(Icons.logout, size: 20),
+                label: Text(
+                  'Exit Guest Mode',
                   style: GoogleFonts.spaceGrotesk(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -286,8 +423,10 @@ class MoreScreen extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Sign Out', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
-        content: Text('Are you sure you want to sign out?', style: GoogleFonts.spaceGrotesk()),
+        title: Text('Sign Out',
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
+        content: Text('Are you sure you want to sign out?',
+            style: GoogleFonts.spaceGrotesk()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -295,7 +434,8 @@ class MoreScreen extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Sign Out', style: GoogleFonts.spaceGrotesk(color: Colors.redAccent)),
+            child: Text('Sign Out',
+                style: GoogleFonts.spaceGrotesk(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -318,7 +458,7 @@ class MoreScreen extends StatelessWidget {
         content: Text(
           value
               ? 'Future contribution prompts disabled.'
-              : 'Contribution prompts enabled again.',
+              : 'Future contribution prompts enabled.',
           style: GoogleFonts.spaceGrotesk(),
         ),
       ),
@@ -430,58 +570,98 @@ class MoreScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildThemeRow(ThemeData theme, bool isDark, ThemeProvider themeProvider) {
+  Widget _buildThemeRow(
+      ThemeData theme, bool isDark, ThemeProvider themeProvider) {
     final mode = themeProvider.themeMode;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
+    final segmentedButton = SegmentedButton<ThemeMode>(
+      segments: const [
+        ButtonSegment(
+            value: ThemeMode.system, icon: Icon(Icons.phone_android, size: 18)),
+        ButtonSegment(
+            value: ThemeMode.light, icon: Icon(Icons.light_mode, size: 18)),
+        ButtonSegment(
+            value: ThemeMode.dark, icon: Icon(Icons.dark_mode, size: 18)),
+      ],
+      selected: {mode},
+      onSelectionChanged: (selected) {
+        themeProvider.setThemeMode(selected.first);
+      },
+      style: ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+    );
+
+    final themeInfo = Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            isDark ? Icons.dark_mode : Icons.light_mode,
-            color: const Color(0xFF13EC13),
-            size: 24,
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Theme',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
-                Text(
-                  mode == ThemeMode.system
-                      ? 'System default'
-                      : (mode == ThemeMode.dark ? 'Dark mode' : 'Light mode'),
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurface.withAlpha(120),
-                  ),
-                ),
-              ],
+          Text(
+            'Theme',
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onSurface,
             ),
           ),
-          SegmentedButton<ThemeMode>(
-            segments: const [
-              ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.phone_android, size: 18)),
-              ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode, size: 18)),
-              ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode, size: 18)),
-            ],
-            selected: {mode},
-            onSelectionChanged: (selected) {
-              themeProvider.setThemeMode(selected.first);
-            },
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          const SizedBox(height: 2),
+          Text(
+            mode == ThemeMode.system
+                ? 'System default'
+                : (mode == ThemeMode.dark ? 'Dark mode' : 'Light mode'),
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 12,
+              color: theme.colorScheme.onSurface.withAlpha(120),
             ),
           ),
         ],
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final useCompactLayout = constraints.maxWidth < 430;
+
+          if (useCompactLayout) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      isDark ? Icons.dark_mode : Icons.light_mode,
+                      color: const Color(0xFF13EC13),
+                      size: 24,
+                    ),
+                    const SizedBox(width: 14),
+                    themeInfo,
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: segmentedButton,
+                ),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Icon(
+                isDark ? Icons.dark_mode : Icons.light_mode,
+                color: const Color(0xFF13EC13),
+                size: 24,
+              ),
+              const SizedBox(width: 14),
+              themeInfo,
+              const SizedBox(width: 12),
+              segmentedButton,
+            ],
+          );
+        },
       ),
     );
   }
@@ -505,6 +685,84 @@ class MoreScreen extends StatelessWidget {
               fontSize: 14,
               fontWeight: FontWeight.w500,
               color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildClassDescriptions(ThemeData theme, bool isDark) {
+    final classDescriptions = const [
+      {
+        'title': 'Early Blight',
+        'description':
+            'A common fungal disease that starts as dark brown spots with target-like rings and can spread upward from older leaves.',
+      },
+      {
+        'title': 'Leaf Mold',
+        'description':
+            'Usually appears in humid conditions, showing pale yellow patches on the upper leaf surface and olive-green mold underneath.',
+      },
+      {
+        'title': 'Leaf Miner',
+        'description':
+            'Caused by insect larvae that tunnel inside the leaf, leaving winding white trails and weakening the plant over time.',
+      },
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Supported disease classes',
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...classDescriptions.map(
+            (item) => Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withAlpha(8)
+                    : const Color(0xFF309249).withAlpha(14),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withAlpha(14)
+                      : const Color(0xFF309249).withAlpha(28),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item['title']!,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    item['description']!,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 12.5,
+                      height: 1.45,
+                      color: theme.colorScheme.onSurface.withAlpha(150),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

@@ -21,7 +21,14 @@ import 'identify_result_screen.dart';
 import 'diagnose_result_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({
+    super.key,
+    this.tutorialSearchKey,
+    this.tutorialScanActionsKey,
+  });
+
+  final GlobalKey? tutorialSearchKey;
+  final GlobalKey? tutorialScanActionsKey;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -106,14 +113,23 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Location Permission', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
-        content: Text('Please enable location access in settings.', style: GoogleFonts.spaceGrotesk()),
+        title: Text('Location Permission',
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
+        content: Text('Please enable location access in settings.',
+            style: GoogleFonts.spaceGrotesk()),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel', style: GoogleFonts.spaceGrotesk())),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: GoogleFonts.spaceGrotesk())),
           ElevatedButton(
-            onPressed: () { Navigator.pop(ctx); Geolocator.openAppSettings(); },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF13EC13)),
-            child: Text('Settings', style: GoogleFonts.spaceGrotesk(color: Colors.white)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Geolocator.openAppSettings();
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF13EC13)),
+            child: Text('Settings',
+                style: GoogleFonts.spaceGrotesk(color: Colors.white)),
           ),
         ],
       ),
@@ -211,8 +227,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Color definitions
     final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
-    final cardColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF);
-    final badgeBgColor = isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5);
+    final cardColor =
+        isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF);
+    final badgeBgColor =
+        isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5);
     final gradientEnd = const Color(0xFF309249);
     final dropShadow = BoxShadow(
       color: Colors.black.withOpacity(isDark ? 0.55 : 0.18),
@@ -227,203 +245,219 @@ class _HomeScreenState extends State<HomeScreen> {
         behavior: HitTestBehavior.translucent,
         child: SafeArea(
           child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top Header Card (Weather Pill)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [dropShadow],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Weather & Location
-                    GestureDetector(
-                      onTap: _requestLocation,
-                      child: Row(
-                        children: [
-                          Icon(
-                            isDark ? Icons.nightlight_round : Icons.wb_sunny,
-                            color: isDark ? Colors.grey[400] : Colors.amber, 
-                            size: 32
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _weather?.cityName ?? (_weatherLoading ? "Loading..." : "San Francisco, CA"),
-                                style: GoogleFonts.spaceGrotesk(
-                                  fontWeight: FontWeight.bold, 
-                                  fontSize: 16,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
-                              ),
-                              Text(
-                                "Sunny, ${_weather?.tempMax.round() ?? '78'}°F",
-                                style: GoogleFonts.spaceGrotesk(
-                                  fontSize: 13, 
-                                  color: isDark ? Colors.grey[400] : Colors.grey[800],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Notification bell with live unread badge
-                    _NotificationBell(
-                      isDark: isDark,
-                      badgeBgColor: badgeBgColor,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // ── Search Bar ────────────────────────────────────────
-              Container(
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  focusNode: _searchFocusNode,
-                  onChanged: _onSearchChanged,
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 15,
-                    color: isDark ? Colors.white : Colors.black87,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top Header Card (Weather Pill)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [dropShadow],
                   ),
-                  decoration: InputDecoration(
-                    hintText: 'Search your scan history...',
-                    hintStyle: GoogleFonts.spaceGrotesk(
-                      color: isDark ? Colors.grey[500] : Colors.grey[400],
-                      fontSize: 15,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.search,
-                      color: isDark ? Colors.grey[500] : Colors.grey[400],
-                    ),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(
-                              Icons.clear,
-                              color: isDark ? Colors.grey[400] : Colors.grey[500],
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Weather & Location
+                      GestureDetector(
+                        onTap: _requestLocation,
+                        child: Row(
+                          children: [
+                            Icon(
+                                isDark
+                                    ? Icons.nightlight_round
+                                    : Icons.wb_sunny,
+                                color: isDark ? Colors.grey[400] : Colors.amber,
+                                size: 32),
+                            const SizedBox(width: 12),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _weather?.cityName ??
+                                      (_weatherLoading
+                                          ? "Loading..."
+                                          : "San Francisco, CA"),
+                                  style: GoogleFonts.spaceGrotesk(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color:
+                                        isDark ? Colors.white : Colors.black87,
+                                  ),
+                                ),
+                                Text(
+                                  "Sunny, ${_weather?.tempMax.round() ?? '78'}°F",
+                                  style: GoogleFonts.spaceGrotesk(
+                                    fontSize: 13,
+                                    color: isDark
+                                        ? Colors.grey[400]
+                                        : Colors.grey[800],
+                                  ),
+                                ),
+                              ],
                             ),
-                            onPressed: _clearSearch,
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // ── Conditional: normal home or search results ────────
-              if (!_isSearchActive) ...[
-                // ── Scanning Section ──────────────────────────────────
-                Text(
-                  "Scanning",
-                  style: GoogleFonts.spaceGrotesk(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 22,
-                    color: isDark ? Colors.white : Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildScanningCard(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const CameraScreen(scanType: 'identify'),
-                          ),
+                          ],
                         ),
-                        title: "Identify",
-                        subtitle: "Recognize\nany plant",
-                        backgroundColor: isDark
-                            ? const Color(0xFF1E4D2B)
-                            : const Color(0xFF2D6A2E),
-                        imagePath: 'assets/images/tomato_plant.png',
-                        isDark: isDark,
-                        imageHeight: 250,
-                        rightOffset: -30,
-                        bottomOffset: -40,
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: _buildScanningCard(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const CameraScreen(scanType: 'diagnose'),
-                          ),
-                        ),
-                        title: "Diagnose",
-                        subtitle: "Check your\nplant's health",
-                        backgroundColor: isDark
-                            ? const Color(0xFF2A2A2A)
-                            : const Color(0xFF3A3A3A),
-                        imagePath: 'assets/images/tomato_plant2.png',
+                      // Notification bell with live unread badge
+                      _NotificationBell(
                         isDark: isDark,
-                        imageHeight: 280,
-                        rightOffset: -20,
-                        bottomOffset: -75,
+                        badgeBgColor: badgeBgColor,
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 32),
-
-                Text(
-                  "Articles for You",
-                  style: GoogleFonts.spaceGrotesk(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 22,
-                    color: isDark ? Colors.white : Colors.black87,
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: hardcodedArticles.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    return ArticleCard(article: hardcodedArticles[index], isDark: isDark);
-                  },
+                // ── Search Bar ────────────────────────────────────────
+                Container(
+                  key: widget.tutorialSearchKey,
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    onChanged: _onSearchChanged,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 15,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Search your scan history...',
+                      hintStyle: GoogleFonts.spaceGrotesk(
+                        color: isDark ? Colors.grey[500] : Colors.grey[400],
+                        fontSize: 15,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: isDark ? Colors.grey[500] : Colors.grey[400],
+                      ),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: Icon(
+                                Icons.clear,
+                                color: isDark
+                                    ? Colors.grey[400]
+                                    : Colors.grey[500],
+                              ),
+                              onPressed: _clearSearch,
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                    ),
+                  ),
                 ),
-              ] else ...[
-                // ── Search Results ────────────────────────────────────
-                _buildSearchHeader(isDark),
-                const SizedBox(height: 16),
-                _buildSearchResultsList(isDark),
+
+                const SizedBox(height: 24),
+
+                // ── Conditional: normal home or search results ────────
+                if (!_isSearchActive) ...[
+                  // ── Scanning Section ──────────────────────────────────
+                  Text(
+                    "Scanning",
+                    style: GoogleFonts.spaceGrotesk(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 22,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  Row(
+                    key: widget.tutorialScanActionsKey,
+                    children: [
+                      Expanded(
+                        child: _buildScanningCard(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const CameraScreen(scanType: 'identify'),
+                            ),
+                          ),
+                          title: "Identify",
+                          subtitle: "Recognize\nany plant",
+                          backgroundColor: isDark
+                              ? const Color(0xFF1E4D2B)
+                              : const Color(0xFF2D6A2E),
+                          imagePath: 'assets/images/tomato_plant.png',
+                          isDark: isDark,
+                          imageHeight: 250,
+                          rightOffset: -30,
+                          bottomOffset: -40,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _buildScanningCard(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const CameraScreen(scanType: 'diagnose'),
+                            ),
+                          ),
+                          title: "Diagnose",
+                          subtitle: "Check your\nplant's health",
+                          backgroundColor: isDark
+                              ? const Color(0xFF2A2A2A)
+                              : const Color(0xFF3A3A3A),
+                          imagePath: 'assets/images/tomato_plant2.png',
+                          isDark: isDark,
+                          imageHeight: 280,
+                          rightOffset: -20,
+                          bottomOffset: -75,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+
+                  Text(
+                    "Articles for You",
+                    style: GoogleFonts.spaceGrotesk(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 22,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: hardcodedArticles.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      return ArticleCard(
+                          article: hardcodedArticles[index], isDark: isDark);
+                    },
+                  ),
+                ] else ...[
+                  // ── Search Results ────────────────────────────────────
+                  _buildSearchHeader(isDark),
+                  const SizedBox(height: 16),
+                  _buildSearchResultsList(isDark),
+                ],
               ],
-            ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -487,8 +521,9 @@ class _HomeScreenState extends State<HomeScreen> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: _filteredScans.length,
-      itemBuilder: (_, index) =>
-          _buildScanSearchCard(_filteredScans[index], isDark, diseaseNumber: diseaseNumbers[index]),
+      itemBuilder: (_, index) => _buildScanSearchCard(
+          _filteredScans[index], isDark,
+          diseaseNumber: diseaseNumbers[index]),
     );
   }
 
@@ -511,9 +546,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return result.reversed.toList();
   }
 
-  Widget _buildScanSearchCard(ScanModel scan, bool isDark, {int? diseaseNumber}) {
+  Widget _buildScanSearchCard(ScanModel scan, bool isDark,
+      {int? diseaseNumber}) {
     final baseName = _getSearchDisplayName(scan.predictedDisease);
-    final displayName = diseaseNumber != null ? '$baseName #$diseaseNumber' : baseName;
+    final displayName =
+        diseaseNumber != null ? '$baseName #$diseaseNumber' : baseName;
     final isHealthy = scan.predictedDisease == 'Healthy';
     final dateStr = DateFormat('MMM d, yyyy  h:mm a').format(scan.timestamp);
     final isIdentify = scan.scanType == 'identify';
@@ -561,8 +598,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         errorWidget: (_, __, ___) => Container(
                           color: isDark ? Colors.grey[800] : Colors.grey[200],
-                          child:
-                              Icon(Icons.eco, color: Colors.grey[400], size: 24),
+                          child: Icon(Icons.eco,
+                              color: Colors.grey[400], size: 24),
                         ),
                       )
                     : Container(
@@ -593,9 +630,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(width: 6),
                       Icon(
-                        isHealthy
-                            ? Icons.check_circle
-                            : Icons.warning_rounded,
+                        isHealthy ? Icons.check_circle : Icons.warning_rounded,
                         color: isHealthy
                             ? const Color(0xFF309249)
                             : Colors.redAccent,
@@ -657,8 +692,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _getSearchBadgeColor(
-                        scan.confidenceScore, isDark),
+                    color: _getSearchBadgeColor(scan.confidenceScore, isDark),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -668,8 +702,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: GoogleFonts.spaceGrotesk(
                       fontSize: 9,
                       fontWeight: FontWeight.bold,
-                      color:
-                          _getSearchTextColor(scan.confidenceScore),
+                      color: _getSearchTextColor(scan.confidenceScore),
                     ),
                   ),
                 ),
@@ -838,7 +871,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
 }
 
 /// Notification bell with a live unread badge driven by a Firestore stream
@@ -887,7 +919,8 @@ class _NotificationBell extends StatelessWidget {
                         horizontal: count > 9 ? 4 : 5,
                         vertical: 1,
                       ),
-                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      constraints:
+                          const BoxConstraints(minWidth: 16, minHeight: 16),
                       decoration: BoxDecoration(
                         color: Colors.red,
                         borderRadius: BorderRadius.circular(10),
@@ -1047,7 +1080,8 @@ class _ArticleCardState extends State<ArticleCard> {
                     memCacheHeight: 400,
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
-                      color: widget.isDark ? Colors.grey[800] : Colors.grey[300],
+                      color:
+                          widget.isDark ? Colors.grey[800] : Colors.grey[300],
                     ),
                     errorWidget: (context, url, error) => Image.asset(
                       widget.article.coverImageUrl,
@@ -1104,9 +1138,11 @@ class _ArticleCardState extends State<ArticleCard> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _getAudienceColor(widget.article.audience).withOpacity(0.9),
+                          color: _getAudienceColor(widget.article.audience)
+                              .withOpacity(0.9),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
@@ -1120,14 +1156,16 @@ class _ArticleCardState extends State<ArticleCard> {
                       ),
                       if (_isRead)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.check_circle, color: Colors.greenAccent, size: 12),
+                              const Icon(Icons.check_circle,
+                                  color: Colors.greenAccent, size: 12),
                               const SizedBox(width: 4),
                               Text(
                                 "Read",

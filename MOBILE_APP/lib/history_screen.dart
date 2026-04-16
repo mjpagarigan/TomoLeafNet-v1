@@ -11,7 +11,9 @@ import 'services/firestore_service.dart';
 import 'services/storage_service.dart';
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  const HistoryScreen({super.key, this.tutorialFilterKey});
+
+  final GlobalKey? tutorialFilterKey;
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -161,7 +163,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
 
     try {
-      final page = await _firestoreService.getUserScansPage(user.uid, limit: 15);
+      final page =
+          await _firestoreService.getUserScansPage(user.uid, limit: 15);
       if (!mounted) return;
       setState(() {
         _allScans = page.scans;
@@ -233,7 +236,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              leading:
+                  const Icon(Icons.delete_outline, color: Colors.redAccent),
               title: Text('Delete This Scan',
                   style: GoogleFonts.spaceGrotesk(
                       fontWeight: FontWeight.w500, color: Colors.redAccent)),
@@ -302,7 +306,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
+      backgroundColor:
+          isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20.0),
@@ -374,6 +379,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               const SizedBox(height: 20),
               // Toggle Switch
               Container(
+                key: widget.tutorialFilterKey,
                 decoration: BoxDecoration(
                   color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[300],
                   borderRadius: BorderRadius.circular(25),
@@ -632,8 +638,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ),
                     ),
                     child: isSelected
-                        ? const Icon(Icons.check,
-                            color: Colors.white, size: 16)
+                        ? const Icon(Icons.check, color: Colors.white, size: 16)
                         : null,
                   ),
                   const SizedBox(width: 10),
@@ -651,33 +656,26 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             memCacheHeight: 120,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(
-                              color: isDark
-                                  ? Colors.grey[800]
-                                  : Colors.grey[200],
+                              color:
+                                  isDark ? Colors.grey[800] : Colors.grey[200],
                               child: const Center(
                                 child: SizedBox(
                                   width: 20,
                                   height: 20,
                                   child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Color(0xFF309249)),
+                                      strokeWidth: 2, color: Color(0xFF309249)),
                                 ),
                               ),
                             ),
                             errorWidget: (_, __, ___) => Container(
-                              color: isDark
-                                  ? Colors.grey[800]
-                                  : Colors.grey[200],
-                              child:
-                                  Icon(Icons.eco, color: Colors.grey[400]),
+                              color:
+                                  isDark ? Colors.grey[800] : Colors.grey[200],
+                              child: Icon(Icons.eco, color: Colors.grey[400]),
                             ),
                           )
                         : Container(
-                            color: isDark
-                                ? Colors.grey[800]
-                                : Colors.grey[200],
-                            child:
-                                Icon(Icons.eco, color: Colors.grey[400]),
+                            color: isDark ? Colors.grey[800] : Colors.grey[200],
+                            child: Icon(Icons.eco, color: Colors.grey[400]),
                           ),
                   ),
                 ),
@@ -695,8 +693,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               style: GoogleFonts.spaceGrotesk(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
-                                color:
-                                    isDark ? Colors.white : Colors.black87,
+                                color: isDark ? Colors.white : Colors.black87,
                               ),
                               maxLines: 2,
                               overflow: TextOverflow.fade,
@@ -733,8 +730,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         color: isDark ? Colors.grey[400] : Colors.grey[600],
                         size: 20),
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                        minWidth: 32, minHeight: 32),
+                    constraints:
+                        const BoxConstraints(minWidth: 32, minHeight: 32),
                     onPressed: () => _showCardMenu(scan, userId),
                   ),
               ],
@@ -749,19 +746,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       : (isDiagnose ? "Diagnose" : "Scan"),
                   color: isIdentify
                       ? const Color(0xFF2D6A2E)
-                      : (isDiagnose
-                          ? const Color(0xFF455A64)
-                          : Colors.grey),
+                      : (isDiagnose ? const Color(0xFF455A64) : Colors.grey),
                   icon: isDiagnose ? Icons.healing : null,
                   isDark: isDark,
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: _getConfidenceBadgeColor(
-                        scan.confidenceScore, isDark),
+                    color:
+                        _getConfidenceBadgeColor(scan.confidenceScore, isDark),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -771,15 +766,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     style: GoogleFonts.spaceGrotesk(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
-                      color: _getConfidenceTextColor(
-                          scan.confidenceScore),
+                      color: _getConfidenceTextColor(scan.confidenceScore),
                     ),
                   ),
                 ),
                 const Spacer(),
-                if (isDiagnose &&
-                    scan.treatmentSteps != null &&
-                    scan.treatmentSteps!.isNotEmpty)
+                if (isDiagnose)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: Row(
@@ -787,18 +779,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         Icon(
                           Icons.check_circle_outline,
                           size: 14,
-                          color: isDark
-                              ? Colors.grey[400]
-                              : Colors.grey[600],
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          "${scan.treatmentSteps!.length} steps",
+                          "Guide",
                           style: GoogleFonts.spaceGrotesk(
                             fontSize: 11,
-                            color: isDark
-                                ? Colors.grey[400]
-                                : Colors.grey[600],
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
                           ),
                         ),
                       ],
