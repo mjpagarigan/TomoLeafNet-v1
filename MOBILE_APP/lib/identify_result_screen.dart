@@ -22,6 +22,7 @@ import 'services/storage_service.dart';
 import 'widgets/disease_carousel.dart';
 import 'widgets/scan_rating_section.dart';
 import 'core/config/app_config.dart';
+import 'widgets/tomo_ui.dart';
 
 /// Identify Result Screen — disease detection only, no treatment info.
 ///
@@ -81,6 +82,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   bool _isFilipino = false;
   bool _isTranslating = false;
   final Map<String, String> _translations = {};
+  String _activeTab = 'summary';
 
   String? _selectedRating;
   String? _ratingConfirmationMessage;
@@ -168,12 +170,14 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
 
         // Improvement 9: Not Tomato — show retake prompt immediately
         if (result.label == 'Not_Tomato') {
-          // Do not save to Firestore
+          // Log to telemetry for aggregated false-positive analysis
+          _logTelemetry(result, 'not_tomato_rejection');
           return;
         }
 
         // Improvement 8: Low confidence (<60%) or ambiguous top-2 gap
         if (result.confidence < 0.60 || result.isAmbiguous) {
+          _logTelemetry(result, 'low_confidence');
           setState(() => _showLowConfidenceWarning = true);
           // Don't save yet — wait for user to tap "Continue Anyway"
           return;
@@ -190,6 +194,19 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         });
       }
     }
+  }
+
+  void _logTelemetry(TFLiteResult result, String reason) {
+    final user = FirebaseAuth.instance.currentUser;
+    _firestoreService.logScanTelemetry(
+      reason: reason,
+      predictedLabel: result.label,
+      confidence: result.confidence,
+      secondLabel: result.secondLabel,
+      secondConfidence: result.secondConfidence,
+      confidenceGap: result.confidenceGap,
+      uid: user?.uid,
+    );
   }
 
   void _onContinueAnyway() {
@@ -501,8 +518,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Correction request sent for ${TFLiteService.getDisplayName(correctedDisease)}. Waiting for admin approval.',
-            style: GoogleFonts.spaceGrotesk(),
+            'Thanks for sending your report for ${TFLiteService.getDisplayName(correctedDisease)}.',
+            style: GoogleFonts.dmSans(),
           ),
         ),
       );
@@ -512,7 +529,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         SnackBar(
           content: Text(
             'Unable to save the correction right now.',
-            style: GoogleFonts.spaceGrotesk(),
+            style: GoogleFonts.dmSans(),
           ),
         ),
       );
@@ -528,7 +545,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            color: isDark ? const Color(0xFF131B17) : Colors.white,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: SafeArea(
@@ -539,7 +556,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
               children: [
                 Text(
                   'Correct scan result',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.white : Colors.black87,
@@ -548,7 +565,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 const SizedBox(height: 8),
                 Text(
                   'Choose the correct result for this scan. This will be sent to the admin and marked as waiting for approval.',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 14,
                     height: 1.45,
                     color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -565,7 +582,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                     ),
                     child: Text(
                       'A correction request for ${TFLiteService.getDisplayName(_correctionRequestedDisease ?? currentLabel)} is already pending.',
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : Colors.black87,
@@ -586,12 +603,12 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           ? Icons.check_circle_rounded
                           : Icons.bug_report_outlined,
                       color: isSelected
-                          ? const Color(0xFF309249)
+                          ? const Color(0xFF3CB45A)
                           : const Color(0xFFF44336),
                     ),
                     title: Text(
                       TFLiteService.getDisplayName(label),
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : Colors.black87,
                       ),
@@ -599,7 +616,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                     subtitle: isSelected
                         ? Text(
                             'Current saved result',
-                            style: GoogleFonts.spaceGrotesk(
+                            style: GoogleFonts.dmSans(
                               fontSize: 12,
                               color:
                                   isDark ? Colors.grey[500] : Colors.grey[600],
@@ -610,7 +627,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                         ? const Icon(
                             Icons.lock_outline,
                             size: 18,
-                            color: Color(0xFF309249),
+                            color: Color(0xFF3CB45A),
                           )
                         : null,
                   );
@@ -691,7 +708,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         return Container(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            color: isDark ? const Color(0xFF131B17) : Colors.white,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: SafeArea(
@@ -703,7 +720,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 children: [
                   Text(
                     'Help TomoLeafNet get smarter!',
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                       color: isDark ? Colors.white : Colors.black87,
@@ -712,7 +729,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                   const SizedBox(height: 12),
                   Text(
                     "Your scan looks great and you confirmed it's accurate.\nWould you like to share this image anonymously to help\ntrain our model and improve results for other farmers?",
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 14,
                       height: 1.5,
                       color: isDark ? Colors.grey[300] : Colors.grey[700],
@@ -721,7 +738,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                   const SizedBox(height: 18),
                   Text(
                     'What we collect:',
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
                       color: isDark ? Colors.white : Colors.black87,
@@ -739,7 +756,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Text(
                         '• $item',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontSize: 13,
                           height: 1.5,
                           color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -750,7 +767,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                   const SizedBox(height: 12),
                   Text(
                     'We will never collect your name, account details, or exact location. Contributions are stored with an internal owner link only so you can view your stats and request deletion later.',
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 13,
                       height: 1.5,
                       color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -762,7 +779,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(ctx, true),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF309249),
+                        backgroundColor: const Color(0xFF3CB45A),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
@@ -772,7 +789,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       ),
                       child: Text(
                         'Yes, help improve TomoLeafNet',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -791,7 +808,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       ),
                       child: Text(
                         'No thanks',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -885,15 +902,15 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                color: isDark ? const Color(0xFF131B17) : Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: _isContributionUploading
-                      ? const Color(0xFF309249).withOpacity(0.25)
+                      ? const Color(0xFF3CB45A).withOpacity(0.25)
                       : (_contributionStatusMessage
                                   ?.startsWith('Contribution uploaded') ??
                               false)
-                          ? const Color(0xFF309249).withOpacity(0.25)
+                          ? const Color(0xFF3CB45A).withOpacity(0.25)
                           : Colors.orangeAccent.withOpacity(0.35),
                 ),
               ),
@@ -904,7 +921,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                     _isContributionUploading
                         ? 'Uploading your contribution...'
                         : _contributionStatusMessage!,
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: isDark ? Colors.white : Colors.black87,
@@ -916,9 +933,9 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       value: _contributionProgress <= 0
                           ? null
                           : _contributionProgress.clamp(0.0, 1.0),
-                      color: const Color(0xFF309249),
+                      color: const Color(0xFF3CB45A),
                       backgroundColor:
-                          const Color(0xFF309249).withOpacity(0.12),
+                          const Color(0xFF3CB45A).withOpacity(0.12),
                     ),
                   ],
                 ],
@@ -935,8 +952,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     context.watch<AppSession>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
-    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final bgColor = isDark ? TomoPalette.bg : const Color(0xFFF5F5F0);
+    final cardColor = isDark ? TomoPalette.surfaceStrong : Colors.white;
 
     // Improvement 9: Not Tomato — full-screen retake prompt
     if (!_isLoading &&
@@ -951,10 +968,14 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       return _buildLowConfidenceScreen(isDark);
     }
 
+    if (!_isLoading && _result != null && _errorMessage.isEmpty) {
+      return _buildRedesignedIdentifyResult(context, isDark);
+    }
+
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
@@ -963,7 +984,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         ),
         title: Text(
           "Identify Results",
-          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+          style: GoogleFonts.dmSans(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         actions: [
@@ -974,18 +995,18 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF309249).withOpacity(0.15),
+                  color: const Color(0xFF3CB45A).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: const Color(0xFF309249).withOpacity(0.3),
+                    color: const Color(0xFF3CB45A).withOpacity(0.3),
                   ),
                 ),
                 child: Text(
                   _isFilipino ? "FIL" : "EN",
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFF309249),
+                    color: const Color(0xFF3CB45A),
                   ),
                 ),
               ),
@@ -999,7 +1020,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Color(0xFF309249),
+                    color: Color(0xFF3CB45A),
                   ),
                 ),
               ),
@@ -1007,7 +1028,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
           else if (!_isGuest && _isSaved)
             const Padding(
               padding: EdgeInsets.only(right: 16),
-              child: Icon(Icons.cloud_done, color: Color(0xFF309249), size: 24),
+              child: Icon(Icons.cloud_done, color: Color(0xFF3CB45A), size: 24),
             ),
         ],
       ),
@@ -1034,7 +1055,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                         _isFilipino
                             ? "Mababang kumpiyansa - maaaring hindi tumpak ang diagnosis na ito"
                             : "Low confidence result \u2014 this diagnosis may not be accurate",
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontSize: 12,
                           color: const Color(0xFFF44336),
                           fontWeight: FontWeight.w500,
@@ -1048,7 +1069,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             // ── Translation loading indicator ──
             if (_isTranslating)
               const LinearProgressIndicator(
-                color: Color(0xFF309249),
+                color: Color(0xFF3CB45A),
                 backgroundColor: Colors.transparent,
                 minHeight: 2,
               ),
@@ -1082,7 +1103,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                         const SizedBox(height: 16),
                         Text(
                           "Identifying...",
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             color: Colors.white,
                             fontSize: 16,
                           ),
@@ -1178,7 +1199,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                         child: Text(
                           _result!.displayName.toUpperCase() +
                               (_result!.label != 'Healthy' ? " DETECTED" : ""),
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -1203,7 +1224,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       ? "Ang mga lugar na naka-highlight sa pula ay kung saan nakatuon ang modelo"
                       : "Areas highlighted in red indicate where the model focused",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 12,
                     color: isDark ? Colors.orange[200] : Colors.orange[800],
                   ),
@@ -1231,7 +1252,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       color: isDark
-                          ? const Color(0xFF2C2C2C)
+                          ? const Color(0xFF1D2721)
                           : const Color(0xFFE8F5E9),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1245,7 +1266,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           Text(
                             _t(TFLiteService.getThresholdLabel(
                                 _result!.label, _result!.confidence)),
-                            style: GoogleFonts.spaceGrotesk(
+                            style: GoogleFonts.dmSans(
                               fontSize: 17,
                               fontWeight: FontWeight.bold,
                               color: TFLiteService.getThresholdColor(
@@ -1264,13 +1285,16 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                         padding: const EdgeInsets.all(24),
                         decoration: BoxDecoration(
                           color: cardColor,
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(24),
+                          border: isDark
+                              ? Border.all(color: const Color(0x12FFFFFF))
+                              : null,
                           boxShadow: [
                             BoxShadow(
-                              color:
-                                  Colors.black.withOpacity(isDark ? 0.4 : 0.08),
-                              blurRadius: 20,
-                              offset: const Offset(0, 8),
+                              color: Colors.black
+                                  .withOpacity(isDark ? 0.55 : 0.08),
+                              blurRadius: 24,
+                              offset: const Offset(0, 10),
                             ),
                           ],
                         ),
@@ -1289,7 +1313,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               _t(TFLiteService.getThresholdTitle(
                                   _result!.label, _result!.confidence)),
                               textAlign: TextAlign.center,
-                              style: GoogleFonts.spaceGrotesk(
+                              style: GoogleFonts.dmSans(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
                                 color: TFLiteService.getThresholdColor(
@@ -1301,7 +1325,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               _t(TFLiteService.getThresholdBody(
                                   _result!.label, _result!.confidence)),
                               textAlign: TextAlign.center,
-                              style: GoogleFonts.spaceGrotesk(
+                              style: GoogleFonts.dmSans(
                                 fontSize: 14,
                                 color: isDark
                                     ? Colors.grey[400]
@@ -1354,7 +1378,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       color: isDark
-                          ? const Color(0xFF2C2C2C)
+                          ? const Color(0xFF1D2721)
                           : const Color(0xFFE8F5E9),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1368,7 +1392,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           Text(
                             _t(TFLiteService.getThresholdTitle(
                                 _result!.label, _result!.confidence)),
-                            style: GoogleFonts.spaceGrotesk(
+                            style: GoogleFonts.dmSans(
                               fontSize: 17,
                               fontWeight: FontWeight.bold,
                               color: TFLiteService.getThresholdColor(
@@ -1393,13 +1417,16 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                         padding: const EdgeInsets.all(24),
                         decoration: BoxDecoration(
                           color: cardColor,
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(24),
+                          border: isDark
+                              ? Border.all(color: const Color(0x12FFFFFF))
+                              : null,
                           boxShadow: [
                             BoxShadow(
-                              color:
-                                  Colors.black.withOpacity(isDark ? 0.4 : 0.08),
-                              blurRadius: 20,
-                              offset: const Offset(0, 8),
+                              color: Colors.black
+                                  .withOpacity(isDark ? 0.55 : 0.08),
+                              blurRadius: 24,
+                              offset: const Offset(0, 10),
                             ),
                           ],
                         ),
@@ -1408,7 +1435,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           children: [
                             Text(
                               "Detection Summary",
-                              style: GoogleFonts.spaceGrotesk(
+                              style: GoogleFonts.dmSans(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
                                 color: isDark ? Colors.white : Colors.black87,
@@ -1448,7 +1475,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               const SizedBox(height: 16),
                               Text(
                                 "Description",
-                                style: GoogleFonts.spaceGrotesk(
+                                style: GoogleFonts.dmSans(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                   color: isDark ? Colors.white : Colors.black87,
@@ -1458,7 +1485,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               Text(
                                 _getDiseaseInfo(
                                     _result!.label, false)['description']!,
-                                style: GoogleFonts.spaceGrotesk(
+                                style: GoogleFonts.dmSans(
                                   fontSize: 14,
                                   color: isDark
                                       ? Colors.grey[400]
@@ -1469,7 +1496,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               const SizedBox(height: 16),
                               Text(
                                 "Symptoms",
-                                style: GoogleFonts.spaceGrotesk(
+                                style: GoogleFonts.dmSans(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                   color: isDark ? Colors.white : Colors.black87,
@@ -1479,7 +1506,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                               Text(
                                 _getDiseaseInfo(
                                     _result!.label, false)['symptoms']!,
-                                style: GoogleFonts.spaceGrotesk(
+                                style: GoogleFonts.dmSans(
                                   fontSize: 14,
                                   color: isDark
                                       ? Colors.grey[400]
@@ -1514,7 +1541,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                                     Expanded(
                                       child: Text(
                                         "Please retake the photo with better lighting and focus.",
-                                        style: GoogleFonts.spaceGrotesk(
+                                        style: GoogleFonts.dmSans(
                                           fontSize: 13,
                                           color: const Color(0xFFF44336),
                                         ),
@@ -1544,14 +1571,847 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   }
 
   // ── Not Tomato full-screen retake (Improvement 9) ──
+  Widget _buildRedesignedIdentifyResult(BuildContext context, bool isDark) {
+    final result = _result!;
+    final guide = DiagnosticGuideService.getGuide(
+      result.label,
+      isFilipino: _isFilipino,
+    );
+    final info = _getDiseaseInfo(result.label, _isFilipino);
+    final summaryDescription = guide?.description ?? info['description'] ?? '';
+    final symptoms = _symptomSectionsForLabel(result.label);
+    final stats = _identifyStatsForLabel(result.label);
+    final bannerColor = result.label == 'Healthy'
+        ? const Color(0xFF24C55E)
+        : const Color(0xFFFF3B4D);
+
+    return Scaffold(
+      backgroundColor: isDark ? TomoPalette.bg : const Color(0xFFF5F5F0),
+      body: TomoBackdrop(
+        isDark: isDark,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    _glassIconButton(
+                      icon: Icons.arrow_back_rounded,
+                      onTap: () => Navigator.pop(context),
+                    ),
+                    const Spacer(),
+                    if (!_isGuest && _isSaving)
+                      const Padding(
+                        padding: EdgeInsets.only(right: 8),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: TomoPalette.primary,
+                          ),
+                        ),
+                      ),
+                    if (!_isGuest && _isSaved)
+                      const Padding(
+                        padding: EdgeInsets.only(right: 8),
+                        child: Icon(
+                          Icons.cloud_done,
+                          color: TomoPalette.primary,
+                          size: 20,
+                        ),
+                      ),
+                    if (_canShowGradCamButton)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _glassIconButton(
+                          icon: _showGradCam
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          onTap: _toggleGradCam,
+                        ),
+                      ),
+                    if (_canReportPrediction)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _glassIconButton(
+                          icon: _hasPendingCorrectionRequest
+                              ? Icons.hourglass_top_rounded
+                              : Icons.warning_amber_rounded,
+                          onTap: _hasPendingCorrectionRequest
+                              ? null
+                              : _reportWrongPrediction,
+                        ),
+                      ),
+                    TextButton(
+                      onPressed: _toggleLanguage,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: TomoDecorations.pill(isDark: isDark),
+                        child: Text(
+                          _isFilipino ? 'FIL' : 'EN',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: TomoPalette.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_isTranslating) ...[
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: const LinearProgressIndicator(
+                      minHeight: 3,
+                      color: TomoPalette.primary,
+                      backgroundColor: Colors.transparent,
+                    ),
+                  ),
+                ],
+                if (_continuedAnyway && result.confidence < 0.60) ...[
+                  const SizedBox(height: 10),
+                  TomoGlassCard(
+                    isDark: isDark,
+                    radius: 16,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: TomoPalette.danger,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _isFilipino
+                                ? 'Mababang confidence ang resultang ito, kaya magandang ulitin ang scan kung duda ka.'
+                                : 'This result was kept despite low confidence, so a rescan is still recommended if anything looks off.',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              height: 1.45,
+                              color: isDark
+                                  ? TomoPalette.textSubtle
+                                  : TomoPalette.lightTextSubtle,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                _buildResultHeroHeader(
+                  isDark: isDark,
+                  bannerText: result.label == 'Healthy'
+                      ? '${result.displayName.toUpperCase()} CONFIRMED'
+                      : '${result.displayName.toUpperCase()} DETECTED',
+                  bannerColor: bannerColor,
+                ),
+                const SizedBox(height: 20),
+                _buildIdentifyTabs(isDark),
+                const SizedBox(height: 18),
+                if (_activeTab == 'summary')
+                  _buildIdentifySummaryTab(
+                    isDark: isDark,
+                    title: result.displayName,
+                    description: summaryDescription,
+                    confidenceText: result.confidencePercent,
+                    confidenceValue: result.confidence,
+                    stats: stats,
+                    categoryChip: _categoryForLabel(result.label),
+                  ),
+                if (_activeTab == 'symptoms')
+                  _buildIdentifySymptomsTab(
+                    isDark: isDark,
+                    symptoms: symptoms,
+                  ),
+                if (_activeTab == 'compare')
+                  _buildIdentifyCompareTab(
+                    isDark: isDark,
+                    label: result.displayName,
+                  ),
+                const SizedBox(height: 18),
+                _buildRatingAndContributionSection(isDark),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResultHeroHeader({
+    required bool isDark,
+    required String bannerText,
+    required Color bannerColor,
+  }) {
+    return SizedBox(
+      height: 240,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: SizedBox(
+              width: double.infinity,
+              height: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _showGradCam && _heatmapBytes != null
+                      ? Image.memory(_heatmapBytes!, fit: BoxFit.cover)
+                      : _buildHeroImage(isDark),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(isDark ? 0.10 : 0.04),
+                          Colors.black.withOpacity(isDark ? 0.24 : 0.08),
+                          Colors.black.withOpacity(isDark ? 0.48 : 0.18),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withOpacity(0.02),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+                child: CustomPaint(
+                  painter: _ResultPatternPainter(),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 18,
+            left: 18,
+            right: 18,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: bannerColor,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: [
+                    BoxShadow(
+                      color: bannerColor.withOpacity(0.45),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _result!.label == 'Healthy'
+                          ? Icons.check_circle_rounded
+                          : Icons.warning_rounded,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      bannerText,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 14,
+            left: 0,
+            right: 0,
+            child: Text(
+              'scanned leaf image',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.spaceMono(
+                fontSize: 10,
+                color: Colors.white.withOpacity(0.45),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIdentifyTabs(bool isDark) {
+    return TomoGlassCard(
+      isDark: isDark,
+      radius: 16,
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: ['summary', 'symptoms', 'compare'].map((tab) {
+          final selected = _activeTab == tab;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _activeTab = tab),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? (isDark
+                          ? TomoPalette.surfaceRaised
+                          : TomoPalette.lightSurfaceRaised)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  _capitalize(tab),
+                  style: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected
+                        ? (isDark ? TomoPalette.text : TomoPalette.lightText)
+                        : (isDark
+                            ? TomoPalette.textMuted
+                            : TomoPalette.lightTextSubtle),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildIdentifySummaryTab({
+    required bool isDark,
+    required String title,
+    required String description,
+    required String confidenceText,
+    required double confidenceValue,
+    required Map<String, String> stats,
+    required String categoryChip,
+  }) {
+    return Column(
+      children: [
+        TomoGlassCard(
+          isDark: isDark,
+          radius: 22,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.dmSans(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? TomoPalette.text : TomoPalette.lightText,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text.rich(
+                TextSpan(
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    height: 1.55,
+                    color: isDark
+                        ? TomoPalette.textSubtle
+                        : TomoPalette.lightTextSubtle,
+                  ),
+                  children: _italicizeScientificName(description),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 84,
+                    child: Text(
+                      'Confidence',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        color: isDark
+                            ? TomoPalette.textMuted
+                            : TomoPalette.lightTextSubtle,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: confidenceValue.clamp(0.0, 1.0),
+                        minHeight: 8,
+                        backgroundColor: Colors.white.withOpacity(0.08),
+                        valueColor: const AlwaysStoppedAnimation(
+                          TomoPalette.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    confidenceText,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: TomoPalette.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  TomoChip(
+                    label: _result!.confidence >= 0.8
+                        ? 'High Confidence'
+                        : _result!.confidence >= 0.6
+                            ? 'Moderate Confidence'
+                            : 'Low Confidence',
+                    color: _result!.confidence >= 0.6
+                        ? TomoPalette.primary
+                        : TomoPalette.amber,
+                  ),
+                  const SizedBox(width: 8),
+                  TomoChip(
+                    label: categoryChip,
+                    color: isDark
+                        ? TomoPalette.textMuted
+                        : TomoPalette.lightTextSubtle,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 1.45,
+          children: stats.entries.map((entry) {
+            final accent = entry.key == 'Spread' || entry.key == 'Treatment'
+                ? TomoPalette.amber
+                : (isDark ? TomoPalette.text : TomoPalette.lightText);
+            return TomoGlassCard(
+              isDark: isDark,
+              radius: 18,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.key,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11,
+                      color: isDark
+                          ? TomoPalette.textMuted
+                          : TomoPalette.lightTextSubtle,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    entry.value,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: accent,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _onDiagnoseThisLeaf,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: TomoPalette.primary,
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            child: Text(
+              _result!.label == 'Healthy'
+                  ? 'View Healthy Care Guide ->'
+                  : 'Get Full Treatment Guide ->',
+              style: GoogleFonts.dmSans(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIdentifySymptomsTab({
+    required bool isDark,
+    required List<MapEntry<String, String>> symptoms,
+  }) {
+    return TomoGlassCard(
+      isDark: isDark,
+      radius: 22,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Visual Symptoms',
+            style: GoogleFonts.dmSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: isDark ? TomoPalette.text : TomoPalette.lightText,
+            ),
+          ),
+          const SizedBox(height: 14),
+          ...symptoms.asMap().entries.map((entry) {
+            final isLast = entry.key == symptoms.length - 1;
+            return Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.value.key,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: TomoPalette.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    entry.value.value,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 14,
+                      height: 1.6,
+                      color: isDark
+                          ? TomoPalette.textSubtle
+                          : TomoPalette.lightTextSubtle,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIdentifyCompareTab({
+    required bool isDark,
+    required String label,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Visually similar confirmed cases',
+          style: GoogleFonts.dmSans(
+            fontSize: 13,
+            color: isDark ? TomoPalette.textMuted : TomoPalette.lightTextSubtle,
+          ),
+        ),
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 0.92,
+          ),
+          itemCount: 4,
+          itemBuilder: (context, index) {
+            return TomoGlassCard(
+              isDark: isDark,
+              radius: 18,
+              padding: EdgeInsets.zero,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(18),
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            isDark
+                                ? const Color(0xFF12311C)
+                                : const Color(0xFFE3F4E8),
+                            isDark
+                                ? const Color(0xFF0B1710)
+                                : const Color(0xFFF8FBF8),
+                          ],
+                        ),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.eco_rounded,
+                            size: 28, color: TomoPalette.primary),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Case #${index + 1}',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isDark
+                                ? TomoPalette.text
+                                : TomoPalette.lightText,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$label - 96%+',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11,
+                            color: isDark
+                                ? TomoPalette.textMuted
+                                : TomoPalette.lightTextSubtle,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _glassIconButton({
+    required IconData icon,
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: TomoDecorations.pill(isDark: true),
+        child: Icon(icon, color: Colors.white, size: 20),
+      ),
+    );
+  }
+
+  String _capitalize(String value) =>
+      value.isEmpty ? value : '${value[0].toUpperCase()}${value.substring(1)}';
+
+  String _categoryForLabel(String label) {
+    switch (label) {
+      case 'Leaf_Miner':
+        return 'Insect';
+      case 'Healthy':
+        return 'Healthy';
+      case 'Not_Tomato':
+        return 'Rejected';
+      default:
+        return 'Fungal';
+    }
+  }
+
+  Map<String, String> _identifyStatsForLabel(String label) {
+    switch (label) {
+      case 'Early_Blight':
+        return const {
+          'Pathogen': 'A. solani',
+          'Severity': 'Moderate',
+          'Spread': 'Rain Splash',
+          'Treatment': 'Fungicide',
+        };
+      case 'Leaf_Miner':
+        return const {
+          'Pathogen': 'Leaf Miner',
+          'Severity': 'Moderate',
+          'Spread': 'Insect Borne',
+          'Treatment': 'Insecticide',
+        };
+      case 'Leaf_Mold':
+        return const {
+          'Pathogen': 'P. fulva',
+          'Severity': 'Moderate',
+          'Spread': 'Airborne',
+          'Treatment': 'Fungicide',
+        };
+      case 'Healthy':
+        return const {
+          'Condition': 'Stable',
+          'Severity': 'None',
+          'Spread': 'N/A',
+          'Treatment': 'Monitor',
+        };
+      default:
+        return const {
+          'Pathogen': 'Unknown',
+          'Severity': 'Review',
+          'Spread': 'Unknown',
+          'Treatment': 'Rescan',
+        };
+    }
+  }
+
+  List<MapEntry<String, String>> _symptomSectionsForLabel(String label) {
+    switch (label) {
+      case 'Leaf_Mold':
+        return const [
+          MapEntry(
+            'Upper leaf surface',
+            'Pale green or yellow spots appear, initially small and angular.',
+          ),
+          MapEntry(
+            'Underside',
+            'Olive-green to brown velvety mold develops beneath the leaf.',
+          ),
+          MapEntry(
+            'Progression',
+            'Spots enlarge, leaves yellow, then brown and eventually drop.',
+          ),
+        ];
+      case 'Early_Blight':
+        return const [
+          MapEntry(
+            'Older leaves',
+            'Dark circular spots appear first, often with concentric target-like rings.',
+          ),
+          MapEntry(
+            'Surrounding tissue',
+            'Yellow halos form around lesions as the infection spreads outward.',
+          ),
+          MapEntry(
+            'Progression',
+            'Leaves dry out, collapse, and the plant gradually defoliates.',
+          ),
+        ];
+      case 'Leaf_Miner':
+        return const [
+          MapEntry(
+            'Leaf trails',
+            'Thin white winding tunnels become visible inside the leaf tissue.',
+          ),
+          MapEntry(
+            'Feeding damage',
+            'Affected areas look scraped or translucent as larvae feed within the leaf.',
+          ),
+          MapEntry(
+            'Progression',
+            'Heavy infestations reduce photosynthesis and cause leaves to curl or dry.',
+          ),
+        ];
+      case 'Healthy':
+        return const [
+          MapEntry(
+            'Leaf color',
+            'Leaves appear evenly green without necrotic spots or unusual discoloration.',
+          ),
+          MapEntry(
+            'Surface condition',
+            'No visible mold growth, tunnels, or water-soaked lesions are present.',
+          ),
+          MapEntry(
+            'Overall plant',
+            'The canopy looks stable and disease pressure appears low at this time.',
+          ),
+        ];
+      default:
+        return const [
+          MapEntry(
+            'Rescan recommended',
+            'Capture the leaf again in brighter light and keep the leaf centered in the frame.',
+          ),
+        ];
+    }
+  }
+
+  List<InlineSpan> _italicizeScientificName(String text) {
+    final spans = <InlineSpan>[];
+    final regex = RegExp(r'([A-Z]\.\s?[a-z]+|[A-Z][a-z]+\s[a-z]+)');
+    int cursor = 0;
+    for (final match in regex.allMatches(text)) {
+      if (match.start > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, match.start)));
+      }
+      spans.add(
+        TextSpan(
+          text: match.group(0),
+          style: const TextStyle(fontStyle: FontStyle.italic),
+        ),
+      );
+      cursor = match.end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor)));
+    }
+    return spans;
+  }
+
   Widget _buildNotTomatoScreen(bool isDark) {
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
-    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final bgColor = isDark ? const Color(0xFF0A0F0C) : const Color(0xFFF5F5F0);
+    final cardColor = isDark ? const Color(0xFF131B17) : Colors.white;
 
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF131B17) : Colors.white,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back,
@@ -1560,7 +2420,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         ),
         title: Text(
           "Scan Result",
-          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+          style: GoogleFonts.dmSans(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
       ),
@@ -1571,12 +2431,14 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             padding: const EdgeInsets.all(32),
             decoration: BoxDecoration(
               color: cardColor,
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(28),
+              border:
+                  isDark ? Border.all(color: const Color(0x12FFFFFF)) : null,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withOpacity(isDark ? 0.55 : 0.1),
+                  blurRadius: 28,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
@@ -1590,7 +2452,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       ? "Hindi ito mukhang dahon ng kamatis."
                       : "This doesn't look like a tomato leaf.",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.white : Colors.black87,
@@ -1602,7 +2464,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       ? "Ang TomoLeafNet ay espesyal na ginawa para sa pagtuklas ng sakit ng dahon ng kamatis."
                       : "TomoLeafNet is designed specifically for tomato leaf disease detection.",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 14,
                     color: isDark ? Colors.grey[400] : Colors.grey[600],
                     height: 1.5,
@@ -1620,7 +2482,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                     children: [
                       Text(
                         _isFilipino ? "Siguraduhing:" : "Please make sure to:",
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: isDark ? Colors.white70 : Colors.black87,
@@ -1656,11 +2518,10 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                     icon: const Icon(Icons.camera_alt, size: 18),
                     label: Text(
                       _isFilipino ? "Kunan Muli" : "Retake Photo",
-                      style:
-                          GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                      style: GoogleFonts.dmSans(fontWeight: FontWeight.bold),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF309249),
+                      backgroundColor: const Color(0xFF3CB45A),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -1684,18 +2545,18 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                           ? "Pumili mula Gallery"
                           : "Choose from Gallery",
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),
                     ),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF309249),
+                      foregroundColor: const Color(0xFF3CB45A),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      side: const BorderSide(color: Color(0xFF309249)),
+                      side: const BorderSide(color: Color(0xFF3CB45A)),
                     ),
                   ),
                 ),
@@ -1709,14 +2570,14 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
 
   // ── Low Confidence retake screen (Improvement 8) ──
   Widget _buildLowConfidenceScreen(bool isDark) {
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
-    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final bgColor = isDark ? const Color(0xFF0A0F0C) : const Color(0xFFF5F5F0);
+    final cardColor = isDark ? const Color(0xFF131B17) : Colors.white;
     final confPercent = (_result!.confidence * 100).toStringAsFixed(0);
 
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF131B17) : Colors.white,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back,
@@ -1725,7 +2586,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         ),
         title: Text(
           "Scan Result",
-          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+          style: GoogleFonts.dmSans(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
       ),
@@ -1736,7 +2597,9 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             padding: const EdgeInsets.all(28),
             decoration: BoxDecoration(
               color: cardColor,
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(28),
+              border:
+                  isDark ? Border.all(color: const Color(0x12FFFFFF)) : null,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
@@ -1756,7 +2619,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       ? "Hindi kami kumpiyansa sa resultang ito."
                       : "We're not confident about this result.",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.white : Colors.black87,
@@ -1768,7 +2631,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       ? "Kumpiyansa: $confPercent% — Masyadong mababa para sa maaasahang diagnosis."
                       : "Confidence: $confPercent% \u2014 This is too low for a reliable diagnosis.",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 14,
                     color: const Color(0xFFF44336),
                     fontWeight: FontWeight.w500,
@@ -1790,7 +2653,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                         _isFilipino
                             ? "Para sa mas magandang resulta:"
                             : "For best results:",
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: isDark ? Colors.white70 : Colors.black87,
@@ -1832,11 +2695,10 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                     icon: const Icon(Icons.camera_alt, size: 18),
                     label: Text(
                       _isFilipino ? "Kunan Muli" : "Retake Photo",
-                      style:
-                          GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                      style: GoogleFonts.dmSans(fontWeight: FontWeight.bold),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF309249),
+                      backgroundColor: const Color(0xFF3CB45A),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -1855,7 +2717,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       _isFilipino
                           ? "Ituloy Pa Rin \u2192"
                           : "Continue Anyway \u2192",
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         color: isDark ? Colors.grey[400] : Colors.grey[600],
                         fontWeight: FontWeight.w600,
                       ),
@@ -1886,7 +2748,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
           Expanded(
             child: Text(
               text,
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 13,
                 color: isDark ? Colors.grey[400] : Colors.grey[600],
                 height: 1.4,
@@ -1910,7 +2772,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
           placeholder: (_, __) => Container(
             color: isDark ? Colors.grey[900] : Colors.grey[200],
             alignment: Alignment.center,
-            child: const CircularProgressIndicator(color: Color(0xFF309249)),
+            child: const CircularProgressIndicator(color: Color(0xFF3CB45A)),
           ),
           errorWidget: (_, __, ___) => Container(
             color: isDark ? Colors.grey[900] : Colors.grey[200],
@@ -1939,7 +2801,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 18),
         decoration: BoxDecoration(
-          color: const Color(0xFF309249).withOpacity(0.15),
+          color: const Color(0xFF3CB45A).withOpacity(0.15),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -1950,16 +2812,16 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
               height: 20,
               child: CircularProgressIndicator(
                 strokeWidth: 2.5,
-                color: Color(0xFF309249),
+                color: Color(0xFF3CB45A),
               ),
             ),
             const SizedBox(width: 12),
             Text(
               "Opening guide...",
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: const Color(0xFF309249),
+                color: const Color(0xFF3CB45A),
               ),
             ),
           ],
@@ -1980,7 +2842,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF309249),
+              backgroundColor: const Color(0xFF3CB45A),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 18),
               shape: RoundedRectangleBorder(
@@ -1992,7 +2854,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
               isViewOnly
                   ? "View Diagnostic Guide"
                   : _t("Diagnose This Leaf") + " 🌿",
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
@@ -2019,7 +2881,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 Expanded(
                   child: Text(
                     _diagnoseError,
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 13,
                       color: const Color(0xFFF44336),
                       height: 1.4,
@@ -2053,7 +2915,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         ],
         Text(
           "$label: ",
-          style: GoogleFonts.spaceGrotesk(
+          style: GoogleFonts.dmSans(
             fontSize: 15,
             color: isDark ? Colors.grey[400] : Colors.grey[600],
           ),
@@ -2061,7 +2923,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         Expanded(
           child: Text(
             value,
-            style: GoogleFonts.spaceGrotesk(
+            style: GoogleFonts.dmSans(
               fontSize: 15,
               fontWeight: FontWeight.bold,
               color: valueColor ?? (isDark ? Colors.white : Colors.black87),
@@ -2125,4 +2987,25 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     if (confidence >= 0.40) return Icons.warning_amber_rounded;
     return Icons.error_outline;
   }
+}
+
+class _ResultPatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.035)
+      ..strokeWidth = 1;
+
+    const spacing = 14.0;
+    for (double x = -size.height; x < size.width; x += spacing) {
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x + size.height, size.height),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -26,6 +26,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PUBLIC_RAW_DIR = os.path.join(BASE_DIR, "DATA-RAW", "public")
 PUBLIC_SPLIT_DIR = os.path.join(BASE_DIR, "DATA-SPLIT", "public_1k")
 MODEL_OUTPUT = os.path.join(BASE_DIR, "MODEL", "phase1_base.keras")
+MODEL_OUTPUT_H5 = MODEL_OUTPUT.replace(".keras", ".h5")
 
 CLASS_NAMES = ["Early_Blight", "Healthy", "Leaf_Miner", "Leaf_Mold", "Not_Tomato"]
 
@@ -164,9 +165,12 @@ def train():
     os.makedirs(os.path.dirname(MODEL_OUTPUT), exist_ok=True)
 
     # Train with checkpoint saving best model
+    # Use .h5 for checkpoints to avoid Keras 3 save_model options bug,
+    # then convert to .keras at the end.
+    h5_checkpoint = MODEL_OUTPUT_H5
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
-            MODEL_OUTPUT, monitor="val_accuracy", save_best_only=True, verbose=1,
+            h5_checkpoint, monitor="val_accuracy", save_best_only=True, verbose=1,
         ),
     ]
 
@@ -177,7 +181,21 @@ def train():
         callbacks=callbacks,
     )
 
-    print(f"\nPhase 1 best model saved to: {MODEL_OUTPUT}")
+    # Try to convert the best .h5 checkpoint to .keras. Some TensorFlow/Keras
+    # combinations still pass an unsupported `options=` argument when saving
+    # the native .keras format, so keep the .h5 checkpoint as a supported
+    # fallback for Phase 2.
+    best_model = tf.keras.models.load_model(h5_checkpoint)
+    try:
+        best_model.save(MODEL_OUTPUT)
+        print(f"\nPhase 1 best model saved to: {MODEL_OUTPUT}")
+    except ValueError as e:
+        if "not supported with the native Keras format" not in str(e):
+            raise
+        print(
+            "\nNative .keras export is not supported in this environment. "
+            f"Keeping the compatible H5 checkpoint instead: {MODEL_OUTPUT_H5}"
+        )
 
     # Print final metrics
     final_train_acc = history.history["accuracy"][-1]

@@ -20,6 +20,7 @@ import 'services/fcm_service.dart';
 import 'services/community_contribution_service.dart';
 import 'services/local_notification_service.dart';
 import 'widgets/guided_onboarding_tutorial.dart';
+import 'widgets/tomo_ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -286,30 +287,49 @@ class _MainScreenState extends State<MainScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+        margin: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.fromLTRB(24, 10, 24, 32),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          color: isDark ? const Color(0xE6131B17) : const Color(0xF7FFFFFF),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          border: Border.all(
+            color: isDark ? TomoPalette.border : TomoPalette.lightBorder,
+          ),
+          boxShadow: TomoDecorations.cardShadow(isDark),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Drag handle
             Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 20),
+              width: 44,
+              height: 5,
+              margin: const EdgeInsets.only(bottom: 22),
               decoration: BoxDecoration(
-                color: isDark ? Colors.grey[600] : Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
+                color: isDark
+                    ? Colors.white.withOpacity(0.18)
+                    : Colors.black.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(999),
               ),
             ),
             Text(
               "Choose Scan Type",
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black87,
+                fontWeight: FontWeight.w800,
+                color: isDark ? TomoPalette.text : TomoPalette.lightText,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              "Start a quick identify scan or open the full guide flow.",
+              textAlign: TextAlign.center,
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                height: 1.4,
+                color: isDark
+                    ? TomoPalette.textMuted
+                    : TomoPalette.lightTextSubtle,
               ),
             ),
             const SizedBox(height: 20),
@@ -380,8 +400,16 @@ class _MainScreenState extends State<MainScreen> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: color,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              color.withOpacity(isDark ? 0.95 : 0.90),
+              isDark ? const Color(0xFF131B17) : color.withOpacity(0.78),
+            ],
+          ),
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.24)),
           boxShadow: [
             BoxShadow(
               color: color.withOpacity(0.35),
@@ -396,7 +424,7 @@ class _MainScreenState extends State<MainScreen> {
             const SizedBox(height: 12),
             Text(
               title,
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 color: Colors.white,
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -405,7 +433,7 @@ class _MainScreenState extends State<MainScreen> {
             const SizedBox(height: 4),
             Text(
               subtitle,
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 color: Colors.white.withOpacity(0.8),
                 fontSize: 12,
               ),
@@ -445,8 +473,9 @@ class _MainScreenState extends State<MainScreen> {
         }
       });
     }
-    final navBgColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
-    const fabColor = Color(0xFF309249);
+    final navBgColor =
+        isDark ? const Color(0xE6101613) : const Color(0xF7FFFFFF);
+    const fabColor = Color(0xFF3CB45A);
 
     return OnboardingTutorialScope(
       startTutorial: _startTutorial,
@@ -471,72 +500,102 @@ class _MainScreenState extends State<MainScreen> {
                         )
                       ],
                     ),
-                    child: FloatingActionButton(
-                      onPressed: () => _showScanTypeChooser(context),
-                      backgroundColor: fabColor,
-                      shape: const CircleBorder(),
-                      elevation: 0,
-                      child: const Icon(Icons.camera_alt,
-                          size: 32, color: Colors.white),
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFF4FC86C),
+                            Color(0xFF2F8D4A),
+                          ],
+                        ),
+                      ),
+                      child: FloatingActionButton(
+                        onPressed: () => _showScanTypeChooser(context),
+                        backgroundColor: Colors.transparent,
+                        shape: const CircleBorder(),
+                        elevation: 0,
+                        child: const Icon(Icons.camera_alt,
+                            size: 32, color: Colors.white),
+                      ),
                     ),
                   ),
             floatingActionButtonLocation:
                 FloatingActionButtonLocation.centerDocked,
-            bottomNavigationBar: BottomAppBar(
-              color: navBgColor,
-              shape: const AutomaticNotchedShape(
-                RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                CircleBorder(),
-              ),
-              notchMargin: 10.0,
-              elevation: 10,
-              child: SizedBox(
-                height: 65,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    if (!isGuest)
-                      _buildNavItem(
-                          Icons.home, Icons.home_outlined, "Home", 0, theme),
-                    if (isGuest)
-                      _buildNavItem(
-                        Icons.chat_bubble,
-                        Icons.chat_bubble_outline,
-                        "Chat",
-                        0,
-                        theme,
-                        tutorialKey: _chatNavTutorialKey,
-                      )
-                    else
-                      _buildNavItem(
-                        Icons.chat_bubble,
-                        Icons.chat_bubble_outline,
-                        "Chat",
-                        1,
-                        theme,
-                        tutorialKey: _chatNavTutorialKey,
-                      ),
-                    const SizedBox(width: 48),
-                    if (!isGuest)
-                      _buildNavItem(
-                        Icons.eco,
-                        Icons.eco_outlined,
-                        "My Plants",
-                        2,
-                        theme,
-                        tutorialKey: _historyNavTutorialKey,
-                      ),
-                    _buildNavItem(
-                      Icons.more_horiz,
-                      Icons.more_horiz,
-                      "More",
-                      isGuest ? 1 : 3,
-                      theme,
-                      tutorialKey: _moreNavTutorialKey,
+            bottomNavigationBar: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(30),
+                child: BottomAppBar(
+                  color: navBgColor,
+                  shape: const AutomaticNotchedShape(
+                    RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(30)),
                     ),
-                  ],
+                    CircleBorder(),
+                  ),
+                  notchMargin: 10.0,
+                  elevation: 0,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: isDark
+                            ? TomoPalette.border
+                            : TomoPalette.lightBorder,
+                      ),
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    child: SizedBox(
+                      height: 72,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          if (!isGuest)
+                            _buildNavItem(Icons.home, Icons.home_outlined,
+                                "Home", 0, theme),
+                          if (isGuest)
+                            _buildNavItem(
+                              Icons.chat_bubble,
+                              Icons.chat_bubble_outline,
+                              "Chat",
+                              0,
+                              theme,
+                              tutorialKey: _chatNavTutorialKey,
+                            )
+                          else
+                            _buildNavItem(
+                              Icons.chat_bubble,
+                              Icons.chat_bubble_outline,
+                              "Chat",
+                              1,
+                              theme,
+                              tutorialKey: _chatNavTutorialKey,
+                            ),
+                          const SizedBox(width: 52),
+                          if (!isGuest)
+                            _buildNavItem(
+                              Icons.eco,
+                              Icons.eco_outlined,
+                              "My Plants",
+                              2,
+                              theme,
+                              tutorialKey: _historyNavTutorialKey,
+                            ),
+                          _buildNavItem(
+                            Icons.more_horiz,
+                            Icons.more_horiz,
+                            "More",
+                            isGuest ? 1 : 3,
+                            theme,
+                            tutorialKey: _moreNavTutorialKey,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -573,8 +632,8 @@ class _MainScreenState extends State<MainScreen> {
     GlobalKey? tutorialKey,
   }) {
     bool isSelected = _currentIndex == index;
-    const activeColor = Color(0xFF309249);
-    final inactiveColor = theme.colorScheme.onSurface.withOpacity(0.5);
+    const activeColor = Color(0xFF3CB45A);
+    final inactiveColor = theme.colorScheme.onSurface.withOpacity(0.4);
 
     return SizedBox(
       key: tutorialKey,
@@ -596,9 +655,9 @@ class _MainScreenState extends State<MainScreen> {
               const SizedBox(height: 4),
               Text(
                 label,
-                style: GoogleFonts.spaceGrotesk(
+                style: GoogleFonts.dmSans(
                   color: isSelected ? activeColor : inactiveColor,
-                  fontSize: 10,
+                  fontSize: 10.5,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),

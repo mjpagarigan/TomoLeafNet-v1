@@ -24,6 +24,7 @@ import 'core/config/app_config.dart';
 import 'models/reminder_model.dart';
 import 'chat_screen.dart';
 import 'screens/reminders_screen.dart';
+import 'widgets/tomo_ui.dart';
 
 /// Diagnose Result Screen — disease detection + built-in diagnostic guide.
 ///
@@ -227,11 +228,13 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
 
       // Improvement 9: Not Tomato — don't proceed
       if (result.label == 'Not_Tomato') {
+        _logTelemetry(result, 'not_tomato_rejection');
         return;
       }
 
       // Improvement 8: Low confidence (<60%) or ambiguous top-2 gap
       if (result.confidence < 0.60 || result.isAmbiguous) {
+        _logTelemetry(result, 'low_confidence');
         setState(() => _showLowConfidenceWarning = true);
         return;
       }
@@ -253,6 +256,19 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         });
       }
     }
+  }
+
+  void _logTelemetry(TFLiteResult result, String reason) {
+    final user = FirebaseAuth.instance.currentUser;
+    _firestoreService.logScanTelemetry(
+      reason: reason,
+      predictedLabel: result.label,
+      confidence: result.confidence,
+      secondLabel: result.secondLabel,
+      secondConfidence: result.secondConfidence,
+      confidenceGap: result.confidenceGap,
+      uid: user?.uid,
+    );
   }
 
   Future<void> _onContinueAnyway() async {
@@ -286,7 +302,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         SnackBar(
           content: Text(
             'Please sign in to add reminders.',
-            style: GoogleFonts.spaceGrotesk(),
+            style: GoogleFonts.dmSans(),
           ),
         ),
       );
@@ -307,7 +323,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          color: isDark ? const Color(0xFF131B17) : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
@@ -317,7 +333,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
           children: [
             Text(
               _isFilipino ? 'Magdagdag ng Paalala' : 'Add Reminder',
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: isDark ? Colors.white : Colors.black87,
@@ -328,7 +344,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
               _isFilipino
                   ? 'Anong uri ng paalala ang gusto mong itakda para sa iyong kamatis?'
                   : 'Which type of reminder would you like to set for your tomato plant?',
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 14,
                 color: isDark ? Colors.grey[400] : Colors.grey[600],
                 height: 1.4,
@@ -338,10 +354,10 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             ...categories.map(
               (category) => ListTile(
                 onTap: () => Navigator.pop(ctx, category),
-                leading: Icon(category.icon, color: const Color(0xFF309249)),
+                leading: Icon(category.icon, color: const Color(0xFF3CB45A)),
                 title: Text(
                   category.label,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontWeight: FontWeight.w600,
                     color: isDark ? Colors.white : Colors.black87,
                   ),
@@ -350,7 +366,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                   _isFilipino
                       ? 'Mag-set ng ${category.label.toLowerCase()} na paalala'
                       : 'Set a ${category.label.toLowerCase()} reminder',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 12,
                     color: isDark ? Colors.grey[500] : Colors.grey[600],
                   ),
@@ -611,8 +627,8 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Correction request sent for ${TFLiteService.getDisplayName(correctedDisease)}. Waiting for admin approval.',
-            style: GoogleFonts.spaceGrotesk(),
+            'Thanks for sending your report for ${TFLiteService.getDisplayName(correctedDisease)}.',
+            style: GoogleFonts.dmSans(),
           ),
         ),
       );
@@ -622,7 +638,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         SnackBar(
           content: Text(
             'Unable to save the correction right now.',
-            style: GoogleFonts.spaceGrotesk(),
+            style: GoogleFonts.dmSans(),
           ),
         ),
       );
@@ -638,7 +654,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            color: isDark ? const Color(0xFF131B17) : Colors.white,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: SafeArea(
@@ -649,7 +665,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
               children: [
                 Text(
                   'Correct scan result',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.white : Colors.black87,
@@ -658,7 +674,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 const SizedBox(height: 8),
                 Text(
                   'Choose the correct result for this scan. This will be sent to the admin and marked as waiting for approval.',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 14,
                     height: 1.45,
                     color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -675,7 +691,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     ),
                     child: Text(
                       'A correction request for ${TFLiteService.getDisplayName(_correctionRequestedDisease ?? currentLabel)} is already pending.',
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : Colors.black87,
@@ -696,12 +712,12 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                           ? Icons.check_circle_rounded
                           : Icons.bug_report_outlined,
                       color: isSelected
-                          ? const Color(0xFF309249)
+                          ? const Color(0xFF3CB45A)
                           : const Color(0xFFF44336),
                     ),
                     title: Text(
                       TFLiteService.getDisplayName(label),
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : Colors.black87,
                       ),
@@ -709,7 +725,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     subtitle: isSelected
                         ? Text(
                             'Current saved result',
-                            style: GoogleFonts.spaceGrotesk(
+                            style: GoogleFonts.dmSans(
                               fontSize: 12,
                               color:
                                   isDark ? Colors.grey[500] : Colors.grey[600],
@@ -720,7 +736,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                         ? const Icon(
                             Icons.lock_outline,
                             size: 18,
-                            color: Color(0xFF309249),
+                            color: Color(0xFF3CB45A),
                           )
                         : null,
                   );
@@ -801,7 +817,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         return Container(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            color: isDark ? const Color(0xFF131B17) : Colors.white,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: SafeArea(
@@ -813,7 +829,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 children: [
                   Text(
                     'Help TomoLeafNet get smarter!',
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                       color: isDark ? Colors.white : Colors.black87,
@@ -822,7 +838,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                   const SizedBox(height: 12),
                   Text(
                     "Your scan looks great and you confirmed it's accurate.\nWould you like to share this image anonymously to help\ntrain our model and improve results for other farmers?",
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 14,
                       height: 1.5,
                       color: isDark ? Colors.grey[300] : Colors.grey[700],
@@ -831,7 +847,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                   const SizedBox(height: 18),
                   Text(
                     'What we collect:',
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
                       color: isDark ? Colors.white : Colors.black87,
@@ -849,7 +865,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Text(
                         '• $item',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontSize: 13,
                           height: 1.5,
                           color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -860,7 +876,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                   const SizedBox(height: 12),
                   Text(
                     'We will never collect your name, account details, or exact location. Contributions are stored with an internal owner link only so you can view your stats and request deletion later.',
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 13,
                       height: 1.5,
                       color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -872,7 +888,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(ctx, true),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF309249),
+                        backgroundColor: const Color(0xFF3CB45A),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
@@ -882,7 +898,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       ),
                       child: Text(
                         'Yes, help improve TomoLeafNet',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -901,7 +917,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       ),
                       child: Text(
                         'No thanks',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -997,15 +1013,15 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                color: isDark ? const Color(0xFF131B17) : Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: _isContributionUploading
-                      ? const Color(0xFF309249).withOpacity(0.25)
+                      ? const Color(0xFF3CB45A).withOpacity(0.25)
                       : (_contributionStatusMessage
                                   ?.startsWith('Contribution uploaded') ??
                               false)
-                          ? const Color(0xFF309249).withOpacity(0.25)
+                          ? const Color(0xFF3CB45A).withOpacity(0.25)
                           : Colors.orangeAccent.withOpacity(0.35),
                 ),
               ),
@@ -1016,7 +1032,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     _isContributionUploading
                         ? 'Uploading your contribution...'
                         : _contributionStatusMessage!,
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: isDark ? Colors.white : Colors.black87,
@@ -1028,9 +1044,9 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       value: _contributionProgress <= 0
                           ? null
                           : _contributionProgress.clamp(0.0, 1.0),
-                      color: const Color(0xFF309249),
+                      color: const Color(0xFF3CB45A),
                       backgroundColor:
-                          const Color(0xFF309249).withOpacity(0.12),
+                          const Color(0xFF3CB45A).withOpacity(0.12),
                     ),
                   ],
                 ],
@@ -1056,8 +1072,8 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     context.watch<AppSession>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
-    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final bgColor = isDark ? TomoPalette.bg : const Color(0xFFF5F5F0);
+    final cardColor = isDark ? TomoPalette.surfaceStrong : Colors.white;
     final currentGuide = _result == null
         ? null
         : DiagnosticGuideService.getGuide(
@@ -1081,10 +1097,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       return _buildLowConfidenceScreen(isDark);
     }
 
+    if (!_isDetecting && _result != null && _errorMessage.isEmpty) {
+      return _buildRedesignedDiagnoseResult(context, isDark);
+    }
+
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
@@ -1093,7 +1113,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         ),
         title: Text(
           "Diagnosis Results",
-          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+          style: GoogleFonts.dmSans(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         actions: [
@@ -1106,18 +1126,18 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF309249).withOpacity(0.15),
+                  color: const Color(0xFF3CB45A).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: const Color(0xFF309249).withOpacity(0.3),
+                    color: const Color(0xFF3CB45A).withOpacity(0.3),
                   ),
                 ),
                 child: Text(
                   _isFilipino ? "FIL" : "EN",
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFF309249),
+                    color: const Color(0xFF3CB45A),
                   ),
                 ),
               ),
@@ -1131,7 +1151,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Color(0xFF309249),
+                    color: Color(0xFF3CB45A),
                   ),
                 ),
               ),
@@ -1139,7 +1159,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
           else if (!_isGuest && _isSaved)
             const Padding(
               padding: EdgeInsets.only(right: 16),
-              child: Icon(Icons.cloud_done, color: Color(0xFF309249), size: 24),
+              child: Icon(Icons.cloud_done, color: Color(0xFF3CB45A), size: 24),
             ),
         ],
       ),
@@ -1166,7 +1186,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                         _isFilipino
                             ? "Mababang kumpiyansa - maaaring hindi tumpak ang diagnosis na ito"
                             : "Low confidence result \u2014 this diagnosis may not be accurate",
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontSize: 12,
                           color: const Color(0xFFF44336),
                           fontWeight: FontWeight.w500,
@@ -1180,7 +1200,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             // Translation loading
             if (_isTranslating)
               const LinearProgressIndicator(
-                color: Color(0xFF309249),
+                color: Color(0xFF3CB45A),
                 backgroundColor: Colors.transparent,
                 minHeight: 2,
               ),
@@ -1214,7 +1234,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                         const SizedBox(height: 16),
                         Text(
                           "Diagnosing...",
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             color: Colors.white,
                             fontSize: 16,
                           ),
@@ -1310,7 +1330,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                         child: Text(
                           _result!.displayName.toUpperCase() +
                               (_result!.label != 'Healthy' ? " DETECTED" : ""),
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -1335,7 +1355,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       ? "Ang mga lugar na naka-highlight sa pula ay kung saan nakatuon ang modelo"
                       : "Areas highlighted in red indicate where the model focused",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 12,
                     color: isDark ? Colors.orange[200] : Colors.orange[800],
                   ),
@@ -1364,7 +1384,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       color: isDark
-                          ? const Color(0xFF2C2C2C)
+                          ? const Color(0xFF1D2721)
                           : const Color(0xFFE8F5E9),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1378,7 +1398,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                           Flexible(
                             child: Text(
                               "${TFLiteService.getThresholdTitle(_result!.label, _result!.confidence)}  \u2022  ${_result!.confidencePercent}",
-                              style: GoogleFonts.spaceGrotesk(
+                              style: GoogleFonts.dmSans(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
                                 color: TFLiteService.getThresholdColor(
@@ -1399,25 +1419,25 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                           width: double.infinity,
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF309249).withOpacity(0.08),
+                            color: const Color(0xFF3CB45A).withOpacity(0.08),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: const Color(0xFF309249).withOpacity(0.2),
+                              color: const Color(0xFF3CB45A).withOpacity(0.2),
                             ),
                           ),
                           child: Row(
                             children: [
                               const Icon(Icons.info_outline,
-                                  color: Color(0xFF309249), size: 18),
+                                  color: Color(0xFF3CB45A), size: 18),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
                                   _isFilipino
                                       ? "Na-identify sa Identify, binuksan ang built-in na gabay"
                                       : "Identified via Identify, opened with the built-in guide",
-                                  style: GoogleFonts.spaceGrotesk(
+                                  style: GoogleFonts.dmSans(
                                     fontSize: 13,
-                                    color: const Color(0xFF309249),
+                                    color: const Color(0xFF3CB45A),
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -1439,13 +1459,16 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                               padding: const EdgeInsets.all(24),
                               decoration: BoxDecoration(
                                 color: cardColor,
-                                borderRadius: BorderRadius.circular(20),
+                                borderRadius: BorderRadius.circular(24),
+                                border: isDark
+                                    ? Border.all(color: const Color(0x12FFFFFF))
+                                    : null,
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black
-                                        .withOpacity(isDark ? 0.4 : 0.08),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 8),
+                                        .withOpacity(isDark ? 0.55 : 0.08),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 10),
                                   ),
                                 ],
                               ),
@@ -1457,7 +1480,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                   Text(
                                     _t("Great news! No treatment needed."),
                                     textAlign: TextAlign.center,
-                                    style: GoogleFonts.spaceGrotesk(
+                                    style: GoogleFonts.dmSans(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
                                       color: const Color(0xFF4CAF50),
@@ -1467,7 +1490,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                   Text(
                                     _t("Your plant looks healthy. Here are some tips to keep it that way:"),
                                     textAlign: TextAlign.center,
-                                    style: GoogleFonts.spaceGrotesk(
+                                    style: GoogleFonts.dmSans(
                                       fontSize: 14,
                                       color: isDark
                                           ? Colors.grey[400]
@@ -1506,13 +1529,13 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                 children: [
                                   Icon(
                                     Icons.info_outline,
-                                    color: const Color(0xFF309249),
+                                    color: const Color(0xFF3CB45A),
                                     size: 24,
                                   ),
                                   const SizedBox(width: 10),
                                   Text(
                                     "Diagnostic Guide",
-                                    style: GoogleFonts.spaceGrotesk(
+                                    style: GoogleFonts.dmSans(
                                       fontSize: 22,
                                       fontWeight: FontWeight.bold,
                                       color: isDark
@@ -1528,13 +1551,17 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                 padding: const EdgeInsets.all(24),
                                 decoration: BoxDecoration(
                                   color: cardColor,
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: isDark
+                                      ? Border.all(
+                                          color: const Color(0x12FFFFFF))
+                                      : null,
                                   boxShadow: [
                                     BoxShadow(
                                       color: Colors.black
-                                          .withOpacity(isDark ? 0.4 : 0.08),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 8),
+                                          .withOpacity(isDark ? 0.55 : 0.08),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, 10),
                                     ),
                                   ],
                                 ),
@@ -1543,7 +1570,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                   children: [
                                     Text(
                                       "Causal Organism / Pest",
-                                      style: GoogleFonts.spaceGrotesk(
+                                      style: GoogleFonts.dmSans(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
                                         color: isDark
@@ -1554,7 +1581,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                     const SizedBox(height: 6),
                                     Text(
                                       currentGuide.organism,
-                                      style: GoogleFonts.spaceGrotesk(
+                                      style: GoogleFonts.dmSans(
                                         fontSize: 14,
                                         color: isDark
                                             ? Colors.grey[400]
@@ -1565,7 +1592,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                     const SizedBox(height: 16),
                                     Text(
                                       "Cause",
-                                      style: GoogleFonts.spaceGrotesk(
+                                      style: GoogleFonts.dmSans(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
                                         color: isDark
@@ -1576,7 +1603,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                     const SizedBox(height: 6),
                                     Text(
                                       currentGuide.cause,
-                                      style: GoogleFonts.spaceGrotesk(
+                                      style: GoogleFonts.dmSans(
                                         fontSize: 14,
                                         color: isDark
                                             ? Colors.grey[400]
@@ -1589,7 +1616,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                       _isFilipino
                                           ? "Paglalarawan"
                                           : "Description",
-                                      style: GoogleFonts.spaceGrotesk(
+                                      style: GoogleFonts.dmSans(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
                                         color: isDark
@@ -1600,7 +1627,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                     const SizedBox(height: 6),
                                     Text(
                                       currentGuide.description,
-                                      style: GoogleFonts.spaceGrotesk(
+                                      style: GoogleFonts.dmSans(
                                         fontSize: 14,
                                         color: isDark
                                             ? Colors.grey[400]
@@ -1619,7 +1646,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                               children: [
                                 Icon(
                                   Icons.healing,
-                                  color: const Color(0xFF309249),
+                                  color: const Color(0xFF3CB45A),
                                   size: 24,
                                 ),
                                 const SizedBox(width: 10),
@@ -1627,7 +1654,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                   _isFilipino
                                       ? "Mga Lunas / Solusyon"
                                       : "Remedies",
-                                  style: GoogleFonts.spaceGrotesk(
+                                  style: GoogleFonts.dmSans(
                                     fontSize: 22,
                                     fontWeight: FontWeight.bold,
                                     color:
@@ -1645,13 +1672,17 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                                 padding: const EdgeInsets.all(20),
                                 decoration: BoxDecoration(
                                   color: cardColor,
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: isDark
+                                      ? Border.all(
+                                          color: const Color(0x12FFFFFF))
+                                      : null,
                                   boxShadow: [
                                     BoxShadow(
                                       color: Colors.black
-                                          .withOpacity(isDark ? 0.4 : 0.08),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 8),
+                                          .withOpacity(isDark ? 0.55 : 0.08),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, 10),
                                     ),
                                   ],
                                 ),
@@ -1699,14 +1730,802 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
   }
 
   // ── Not Tomato retake screen ──
+  Widget _buildRedesignedDiagnoseResult(BuildContext context, bool isDark) {
+    final result = _result!;
+    final guide = DiagnosticGuideService.getGuide(
+      result.label,
+      isFilipino: _isFilipino,
+    );
+    final displayedRemedies = guide?.remedies ?? _treatmentSteps ?? const [];
+    final meta = _diagnoseMetaForLabel(result.label);
+    final bannerColor = result.label == 'Healthy'
+        ? const Color(0xFF24C55E)
+        : const Color(0xFFFF3B4D);
+    final warningText = _isFilipino
+        ? 'Mababang confidence ang resultang ito, kaya magandang ulitin ang scan kung duda ka.'
+        : 'This result was kept despite low confidence, so a rescan is still recommended if anything looks off.';
+
+    return Scaffold(
+      backgroundColor: isDark ? TomoPalette.bg : const Color(0xFFF5F5F0),
+      body: TomoBackdrop(
+        isDark: isDark,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDiagnoseTopBar(isDark),
+                if (_isTranslating) ...[
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: const LinearProgressIndicator(
+                      minHeight: 3,
+                      color: TomoPalette.primary,
+                      backgroundColor: Colors.transparent,
+                    ),
+                  ),
+                ],
+                if (_continuedAnyway && result.confidence < 0.60) ...[
+                  const SizedBox(height: 10),
+                  TomoGlassCard(
+                    isDark: isDark,
+                    radius: 16,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: TomoPalette.danger,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            warningText,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              height: 1.45,
+                              color: isDark
+                                  ? TomoPalette.textSubtle
+                                  : TomoPalette.lightTextSubtle,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                _buildDiagnoseHeroHeader(
+                  isDark: isDark,
+                  bannerColor: bannerColor,
+                  bannerText: result.label == 'Healthy'
+                      ? '${result.displayName.toUpperCase()} CONFIRMED'
+                      : '${result.displayName.toUpperCase()} DETECTED',
+                ),
+                if (widget.upgradedFromIdentify) ...[
+                  const SizedBox(height: 14),
+                  TomoGlassCard(
+                    isDark: isDark,
+                    radius: 16,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.info_outline,
+                          color: TomoPalette.primary,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _isFilipino
+                                ? 'Binuksan ito mula sa Identify para makita ang built-in na treatment guide.'
+                                : 'Opened from Identify so you can continue with the built-in treatment guide.',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              height: 1.45,
+                              color: isDark
+                                  ? TomoPalette.textSubtle
+                                  : TomoPalette.lightTextSubtle,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (_showGradCam && _heatmapBytes != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _isFilipino
+                        ? 'Makikita sa overlay kung saan higit tumingin ang modelo.'
+                        : 'The overlay shows where the model focused most on the scanned leaf.',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12,
+                      color: isDark
+                          ? TomoPalette.textMuted
+                          : TomoPalette.lightTextSubtle,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                if (result.label == 'Healthy') ...[
+                  TomoSectionLabel('HEALTHY GUIDE', isDark: isDark),
+                  const SizedBox(height: 10),
+                  TomoGlassCard(
+                    isDark: isDark,
+                    radius: 22,
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _isFilipino
+                              ? 'Mukhang malusog ang dahon mo.'
+                              : 'Your leaf looks healthy.',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: isDark
+                                ? TomoPalette.text
+                                : TomoPalette.lightText,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _isFilipino
+                              ? 'Walang agarang treatment na kailangan, pero narito ang mga susunod na hakbang para manatiling maayos ang halaman.'
+                              : 'No immediate treatment is needed, but these next steps help keep the plant in good condition.',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 14,
+                            height: 1.55,
+                            color: isDark
+                                ? TomoPalette.textSubtle
+                                : TomoPalette.lightTextSubtle,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ..._healthyCareTips.asMap().entries.map(
+                              (entry) => Padding(
+                                padding: EdgeInsets.only(
+                                  bottom:
+                                      entry.key == _healthyCareTips.length - 1
+                                          ? 0
+                                          : 12,
+                                ),
+                                child: _buildDiagnoseRemedyCard(
+                                  isDark: isDark,
+                                  number: entry.key + 1,
+                                  step: entry.value,
+                                ),
+                              ),
+                            ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  TomoSectionLabel('GUIDE OVERVIEW', isDark: isDark),
+                  const SizedBox(height: 10),
+                  TomoGlassCard(
+                    isDark: isDark,
+                    radius: 22,
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          result.displayName,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            color: isDark
+                                ? TomoPalette.text
+                                : TomoPalette.lightText,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          guide?.organism ?? meta['organism']!,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: TomoPalette.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          guide?.description ?? meta['description']!,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 14,
+                            height: 1.55,
+                            color: isDark
+                                ? TomoPalette.textSubtle
+                                : TomoPalette.lightTextSubtle,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            TomoChip(
+                              label: result.confidence >= 0.8
+                                  ? 'High Confidence'
+                                  : result.confidence >= 0.6
+                                      ? 'Moderate Confidence'
+                                      : 'Low Confidence',
+                              color: result.confidence >= 0.6
+                                  ? TomoPalette.primary
+                                  : TomoPalette.amber,
+                            ),
+                            TomoChip(
+                              label: meta['badge']!,
+                              color: isDark
+                                  ? TomoPalette.textMuted
+                                  : TomoPalette.lightTextSubtle,
+                            ),
+                            TomoChip(
+                              label: result.confidencePercent,
+                              color: TomoPalette.primary,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final causeCard = _buildDiagnoseDetailCard(
+                        isDark: isDark,
+                        title: 'Cause',
+                        body: guide?.cause ?? meta['cause']!,
+                      );
+                      final descriptionCard = _buildDiagnoseDetailCard(
+                        isDark: isDark,
+                        title: 'Description',
+                        body: guide?.description ?? meta['description']!,
+                      );
+                      if (constraints.maxWidth < 360) {
+                        return Column(
+                          children: [
+                            causeCard,
+                            const SizedBox(height: 12),
+                            descriptionCard,
+                          ],
+                        );
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: causeCard),
+                          const SizedBox(width: 12),
+                          Expanded(child: descriptionCard),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 18),
+                  TomoSectionLabel('RECOMMENDED REMEDIES', isDark: isDark),
+                  const SizedBox(height: 10),
+                  ...displayedRemedies.asMap().entries.map(
+                        (entry) => Padding(
+                          padding: EdgeInsets.only(
+                            bottom: entry.key == displayedRemedies.length - 1
+                                ? 0
+                                : 12,
+                          ),
+                          child: _buildDiagnoseRemedyCard(
+                            isDark: isDark,
+                            number: entry.key + 1,
+                            step: entry.value,
+                          ),
+                        ),
+                      ),
+                ],
+                if (!_isGuest) ...[
+                  const SizedBox(height: 18),
+                  _buildRedesignedReminderCard(isDark),
+                ],
+                const SizedBox(height: 14),
+                _buildRedesignedChatCard(isDark),
+                const SizedBox(height: 18),
+                _buildRatingAndContributionSection(isDark),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiagnoseTopBar(bool isDark) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            _buildDiagnoseActionButton(
+              icon: Icons.arrow_back_rounded,
+              onTap: () => Navigator.pop(context),
+            ),
+            Expanded(
+              child: Text(
+                'Treatment Guide',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.dmSans(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? TomoPalette.text : TomoPalette.lightText,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: _toggleLanguage,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: TomoDecorations.pill(isDark: isDark),
+                child: Text(
+                  _isFilipino ? 'FIL' : 'EN',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: TomoPalette.primary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (!_isGuest && _isSaving)
+                _buildDiagnoseActionButton(
+                  child: const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: TomoPalette.primary,
+                    ),
+                  ),
+                ),
+              if (!_isGuest && _isSaved)
+                _buildDiagnoseActionButton(
+                  icon: Icons.cloud_done_rounded,
+                  iconColor: TomoPalette.primary,
+                ),
+              if (_canShowGradCamButton)
+                _buildDiagnoseActionButton(
+                  icon: _showGradCam
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                  onTap: _toggleGradCam,
+                ),
+              if (_canReportPrediction)
+                _buildDiagnoseActionButton(
+                  icon: _hasPendingCorrectionRequest
+                      ? Icons.hourglass_top_rounded
+                      : Icons.warning_amber_rounded,
+                  iconColor: _hasPendingCorrectionRequest
+                      ? TomoPalette.amber
+                      : TomoPalette.danger,
+                  onTap: _hasPendingCorrectionRequest
+                      ? null
+                      : _reportWrongPrediction,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDiagnoseHeroHeader({
+    required bool isDark,
+    required Color bannerColor,
+    required String bannerText,
+  }) {
+    final result = _result!;
+    return SizedBox(
+      height: 240,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: SizedBox(
+              width: double.infinity,
+              height: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _showGradCam && _heatmapBytes != null
+                      ? Image.memory(_heatmapBytes!, fit: BoxFit.cover)
+                      : _buildHeroImage(isDark),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(isDark ? 0.10 : 0.04),
+                          Colors.black.withOpacity(isDark ? 0.24 : 0.08),
+                          Colors.black.withOpacity(isDark ? 0.48 : 0.18),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: CustomPaint(
+                  painter: _DiagnoseResultPatternPainter(),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 18,
+            left: 18,
+            right: 18,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: bannerColor,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: [
+                    BoxShadow(
+                      color: bannerColor.withOpacity(0.45),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      result.label == 'Healthy'
+                          ? Icons.check_circle_rounded
+                          : Icons.warning_rounded,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      bannerText,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 14,
+            left: 0,
+            right: 0,
+            child: Text(
+              'scanned leaf image',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.spaceMono(
+                fontSize: 10,
+                color: Colors.white.withOpacity(0.45),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagnoseDetailCard({
+    required bool isDark,
+    required String title,
+    required String body,
+  }) {
+    return TomoGlassCard(
+      isDark: isDark,
+      radius: 18,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.dmSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color:
+                  isDark ? TomoPalette.textMuted : TomoPalette.lightTextSubtle,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            body,
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              height: 1.55,
+              color: isDark ? TomoPalette.text : TomoPalette.lightText,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagnoseRemedyCard({
+    required bool isDark,
+    required int number,
+    required String step,
+  }) {
+    final baseStyle = GoogleFonts.dmSans(
+      fontSize: 14,
+      height: 1.55,
+      color: isDark ? TomoPalette.text : TomoPalette.lightText,
+    );
+
+    return TomoGlassCard(
+      isDark: isDark,
+      radius: 18,
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: TomoPalette.primary.withOpacity(0.16),
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              '$number',
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: TomoPalette.primary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: baseStyle,
+                children: _buildMarkdownBoldSpans(step, baseStyle),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRedesignedReminderCard(bool isDark) {
+    return TomoGlassCard(
+      isDark: isDark,
+      radius: 22,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Care Reminder',
+            style: GoogleFonts.dmSans(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: isDark ? TomoPalette.text : TomoPalette.lightText,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _isFilipino
+                ? 'Mag-set ng susunod na paalala para sa pagdidilig, pag-check ng lupa, o treatment follow-up habang mino-monitor mo ang halaman.'
+                : 'Set the next reminder for watering, soil checks, or treatment follow-up while you monitor the plant.',
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              height: 1.55,
+              color:
+                  isDark ? TomoPalette.textSubtle : TomoPalette.lightTextSubtle,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _showReminderCategorySheet,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: TomoPalette.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: Text(
+                'Add Reminder',
+                style: GoogleFonts.dmSans(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRedesignedChatCard(bool isDark) {
+    final diseaseLabel = _result?.displayName ?? 'this result';
+    return TomoGlassCard(
+      isDark: isDark,
+      radius: 22,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Need a second opinion?',
+            style: GoogleFonts.dmSans(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: isDark ? TomoPalette.text : TomoPalette.lightText,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _isFilipino
+                ? 'Buksan ang Plant AI para magtanong tungkol sa $diseaseLabel, management steps, at susunod na gagawin.'
+                : 'Open Plant AI to ask about $diseaseLabel, management steps, and what to do next.',
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              height: 1.55,
+              color:
+                  isDark ? TomoPalette.textSubtle : TomoPalette.lightTextSubtle,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ChatScreen(),
+                  ),
+                );
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: TomoPalette.primary,
+                side: const BorderSide(color: TomoPalette.primary),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: Text(
+                'Ask Plant AI',
+                style: GoogleFonts.dmSans(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagnoseActionButton({
+    IconData? icon,
+    Widget? child,
+    VoidCallback? onTap,
+    Color? iconColor,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: TomoDecorations.pill(isDark: true),
+        alignment: Alignment.center,
+        child: child ??
+            Icon(
+              icon,
+              color: iconColor ?? Colors.white,
+              size: 20,
+            ),
+      ),
+    );
+  }
+
+  Map<String, String> _diagnoseMetaForLabel(String label) {
+    switch (label) {
+      case 'Early_Blight':
+        return const {
+          'badge': 'Fungal',
+          'organism': 'Alternaria solani',
+          'cause':
+              'Warm, moist conditions plus infected debris allow spores to keep spreading.',
+          'description':
+              'Dark target-like lesions form on older leaves, followed by yellowing and early defoliation.',
+        };
+      case 'Leaf_Miner':
+        return const {
+          'badge': 'Pest',
+          'organism': 'Tuta absoluta',
+          'cause':
+              'Adult moths lay eggs and the larvae feed inside leaves, stems, and fruit.',
+          'description':
+              'Leaf tissue develops pale winding mines as larvae tunnel and feed under the surface.',
+        };
+      case 'Leaf_Mold':
+        return const {
+          'badge': 'Fungal',
+          'organism': 'Passalora fulva',
+          'cause':
+              'High humidity and poor airflow let leaf mold spread quickly in protected growing areas.',
+          'description':
+              'Yellow spotting on top of the leaf is usually paired with olive-brown mold underneath.',
+        };
+      case 'Healthy':
+        return const {
+          'badge': 'Healthy',
+          'organism': 'No active pathogen detected',
+          'cause':
+              'No disease pattern was strong enough to trigger a treatment recommendation.',
+          'description':
+              'The scanned leaf shows a healthy appearance based on the current on-device model.',
+        };
+      default:
+        return const {
+          'badge': 'Review',
+          'organism': 'Unknown',
+          'cause': 'A stronger or clearer scan may be needed.',
+          'description':
+              'The offline guide could not fully classify this result.',
+        };
+    }
+  }
+
   Widget _buildNotTomatoScreen(bool isDark) {
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
-    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final bgColor = isDark ? const Color(0xFF0A0F0C) : const Color(0xFFF5F5F0);
+    final cardColor = isDark ? const Color(0xFF131B17) : Colors.white;
 
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF131B17) : Colors.white,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back,
@@ -1714,7 +2533,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
           onPressed: () => Navigator.pop(context),
         ),
         title: Text("Scan Result",
-            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+            style: GoogleFonts.dmSans(fontWeight: FontWeight.bold)),
         centerTitle: true,
       ),
       body: Center(
@@ -1724,12 +2543,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             padding: const EdgeInsets.all(32),
             decoration: BoxDecoration(
               color: cardColor,
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(28),
+              border:
+                  isDark ? Border.all(color: const Color(0x12FFFFFF)) : null,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withOpacity(isDark ? 0.55 : 0.1),
+                  blurRadius: 28,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
@@ -1743,7 +2564,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       ? "Hindi ito mukhang dahon ng kamatis."
                       : "This doesn't look like a tomato leaf.",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.white : Colors.black87,
@@ -1755,7 +2576,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       ? "Ang TomoLeafNet ay espesyal na ginawa para sa pagtuklas ng sakit ng dahon ng kamatis."
                       : "TomoLeafNet is designed specifically for tomato leaf disease detection.",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 14,
                     color: isDark ? Colors.grey[400] : Colors.grey[600],
                     height: 1.5,
@@ -1769,12 +2590,12 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     icon: const Icon(Icons.camera_alt, size: 18),
                     label: Text(
                       "Retake Photo",
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF309249),
+                      backgroundColor: const Color(0xFF3CB45A),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -1793,18 +2614,18 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     label: Text(
                       "Choose from Gallery",
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),
                     ),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF309249),
+                      foregroundColor: const Color(0xFF3CB45A),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      side: const BorderSide(color: Color(0xFF309249)),
+                      side: const BorderSide(color: Color(0xFF3CB45A)),
                     ),
                   ),
                 ),
@@ -1818,14 +2639,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
 
   // ── Low Confidence retake screen ──
   Widget _buildLowConfidenceScreen(bool isDark) {
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
-    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final bgColor = isDark ? const Color(0xFF0A0F0C) : const Color(0xFFF5F5F0);
+    final cardColor = isDark ? const Color(0xFF131B17) : Colors.white;
     final confPercent = (_result!.confidence * 100).toStringAsFixed(0);
 
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF131B17) : Colors.white,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back,
@@ -1833,7 +2654,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
           onPressed: () => Navigator.pop(context),
         ),
         title: Text("Scan Result",
-            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+            style: GoogleFonts.dmSans(fontWeight: FontWeight.bold)),
         centerTitle: true,
       ),
       body: Center(
@@ -1843,12 +2664,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             padding: const EdgeInsets.all(28),
             decoration: BoxDecoration(
               color: cardColor,
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(28),
+              border:
+                  isDark ? Border.all(color: const Color(0x12FFFFFF)) : null,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withOpacity(isDark ? 0.55 : 0.1),
+                  blurRadius: 28,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
@@ -1861,7 +2684,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 Text(
                   "We're not confident about this result.",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.white : Colors.black87,
@@ -1871,7 +2694,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 Text(
                   "Confidence: $confPercent% \u2014 This is too low for a reliable diagnosis.",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 14,
                     color: const Color(0xFFF44336),
                     fontWeight: FontWeight.w500,
@@ -1890,7 +2713,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text("For best results:",
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: isDark ? Colors.white70 : Colors.black87,
@@ -1914,10 +2737,9 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     onPressed: _onRetakePhoto,
                     icon: const Icon(Icons.camera_alt, size: 18),
                     label: Text("Retake Photo",
-                        style: GoogleFonts.spaceGrotesk(
-                            fontWeight: FontWeight.bold)),
+                        style: GoogleFonts.dmSans(fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF309249),
+                      backgroundColor: const Color(0xFF3CB45A),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -1932,7 +2754,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                   child: TextButton(
                     onPressed: _onContinueAnyway,
                     child: Text("Continue Anyway \u2192",
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           color: isDark ? Colors.grey[400] : Colors.grey[600],
                           fontWeight: FontWeight.w600,
                         )),
@@ -1958,7 +2780,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                   fontSize: 14)),
           Expanded(
             child: Text(text,
-                style: GoogleFonts.spaceGrotesk(
+                style: GoogleFonts.dmSans(
                   fontSize: 13,
                   color: isDark ? Colors.grey[400] : Colors.grey[600],
                   height: 1.4,
@@ -1981,7 +2803,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
           placeholder: (_, __) => Container(
             color: isDark ? Colors.grey[900] : Colors.grey[200],
             alignment: Alignment.center,
-            child: const CircularProgressIndicator(color: Color(0xFF309249)),
+            child: const CircularProgressIndicator(color: Color(0xFF3CB45A)),
           ),
           errorWidget: (_, __, ___) => Container(
             color: isDark ? Colors.grey[900] : Colors.grey[200],
@@ -2013,7 +2835,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
           placeholder: (_, __) => Container(
             color: isDark ? Colors.grey[900] : Colors.grey[200],
             alignment: Alignment.center,
-            child: const CircularProgressIndicator(color: Color(0xFF309249)),
+            child: const CircularProgressIndicator(color: Color(0xFF3CB45A)),
           ),
           errorWidget: (_, __, ___) => Container(
             color: isDark ? Colors.grey[900] : Colors.grey[200],
@@ -2039,7 +2861,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     bool isLast = false,
   }) {
     String cleanStep = step.replaceFirst(RegExp(r'^\d+[\.\)]\s*'), '');
-    final baseStyle = GoogleFonts.spaceGrotesk(
+    final baseStyle = GoogleFonts.dmSans(
       fontSize: 15,
       color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87,
       height: 1.5,
@@ -2054,16 +2876,16 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: const Color(0xFF309249).withOpacity(0.15),
+              color: const Color(0xFF3CB45A).withOpacity(0.15),
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,
             child: Text(
               '$number',
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
-                color: const Color(0xFF309249),
+                color: const Color(0xFF3CB45A),
               ),
             ),
           ),
@@ -2120,13 +2942,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: isDark ? const Color(0xFF131B17) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: isDark ? Border.all(color: const Color(0x12FFFFFF)) : null,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.35 : 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: Colors.black.withOpacity(isDark ? 0.55 : 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -2135,14 +2958,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         children: [
           Row(
             children: [
-              const Icon(Icons.notifications_active, color: Color(0xFF309249)),
+              const Icon(Icons.notifications_active, color: Color(0xFF3CB45A)),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   _isFilipino
                       ? 'Magtakda ng paalala sa pag-aalaga'
                       : 'Set a care reminder',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.white : Colors.black87,
@@ -2156,7 +2979,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             _isFilipino
                 ? 'Magdagdag ng reminder para sa pagdidilig, pagpapataba, o pag-check ng lupa habang ginagamot ang iyong halaman.'
                 : 'Add a reminder for watering, fertilizing, or checking the soil while you treat your plant.',
-            style: GoogleFonts.spaceGrotesk(
+            style: GoogleFonts.dmSans(
               fontSize: 14,
               color: isDark ? Colors.grey[400] : Colors.grey[600],
               height: 1.45,
@@ -2170,10 +2993,10 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
               icon: const Icon(Icons.add_alert_rounded),
               label: Text(
                 _isFilipino ? 'Magdagdag ng Paalala' : 'Add Reminder',
-                style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                style: GoogleFonts.dmSans(fontWeight: FontWeight.bold),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF309249),
+                backgroundColor: const Color(0xFF3CB45A),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
@@ -2195,13 +3018,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: isDark ? const Color(0xFF131B17) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: isDark ? Border.all(color: const Color(0x12FFFFFF)) : null,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.35 : 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: Colors.black.withOpacity(isDark ? 0.55 : 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -2210,14 +3034,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         children: [
           Row(
             children: [
-              const Icon(Icons.chat_bubble_outline, color: Color(0xFF309249)),
+              const Icon(Icons.chat_bubble_outline, color: Color(0xFF3CB45A)),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   _isFilipino
                       ? 'May tanong ka pa tungkol sa resultang ito?'
                       : 'Have a question about this diagnosis?',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.white : Colors.black87,
@@ -2231,7 +3055,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             _isFilipino
                 ? 'Buksan ang Plant AI chat para magtanong tungkol sa $diseaseLabel, sintomas, paggamot, at susunod na gagawin.'
                 : 'Open Plant AI chat to ask about $diseaseLabel, symptoms, treatment steps, and what to do next.',
-            style: GoogleFonts.spaceGrotesk(
+            style: GoogleFonts.dmSans(
               fontSize: 14,
               color: isDark ? Colors.grey[400] : Colors.grey[600],
               height: 1.45,
@@ -2252,11 +3076,11 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
               icon: const Icon(Icons.smart_toy_outlined),
               label: Text(
                 _isFilipino ? 'Magtanong sa Plant AI' : 'Ask Plant AI',
-                style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                style: GoogleFonts.dmSans(fontWeight: FontWeight.bold),
               ),
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF309249),
-                side: const BorderSide(color: Color(0xFF309249)),
+                foregroundColor: const Color(0xFF3CB45A),
+                side: const BorderSide(color: Color(0xFF3CB45A)),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -2268,4 +3092,25 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       ),
     );
   }
+}
+
+class _DiagnoseResultPatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.035)
+      ..strokeWidth = 1;
+
+    const spacing = 14.0;
+    for (double x = -size.height; x < size.width; x += spacing) {
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x + size.height, size.height),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

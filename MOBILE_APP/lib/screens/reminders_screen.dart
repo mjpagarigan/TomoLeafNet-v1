@@ -51,15 +51,15 @@ class _RemindersScreenState extends State<RemindersScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
-    const accent = Color(0xFF309249);
+    final bgColor = isDark ? const Color(0xFF0A0F0C) : const Color(0xFFF5F5F0);
+    const accent = Color(0xFF3CB45A);
 
     if (_uid == null) {
       return Scaffold(
         backgroundColor: bgColor,
         body: Center(
           child: Text('Please sign in to view reminders.',
-              style: GoogleFonts.spaceGrotesk()),
+              style: GoogleFonts.dmSans()),
         ),
       );
     }
@@ -80,7 +80,7 @@ class _RemindersScreenState extends State<RemindersScreen>
                         const Icon(Icons.chevron_left, color: accent, size: 28),
                     label: Text(
                       'Back',
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                           color: accent,
                           fontWeight: FontWeight.w600,
                           fontSize: 16),
@@ -112,7 +112,7 @@ class _RemindersScreenState extends State<RemindersScreen>
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'Reminders',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 36,
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.white : Colors.black87,
@@ -124,7 +124,7 @@ class _RemindersScreenState extends State<RemindersScreen>
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Container(
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                  color: isDark ? const Color(0xFF131B17) : Colors.white,
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: TabBar(
@@ -141,7 +141,7 @@ class _RemindersScreenState extends State<RemindersScreen>
                   unselectedLabelColor:
                       isDark ? Colors.grey[500] : Colors.grey[600],
                   labelStyle:
-                      GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                      GoogleFonts.dmSans(fontWeight: FontWeight.bold),
                   tabs: const [Tab(text: 'Today'), Tab(text: 'Upcoming')],
                 ),
               ),
@@ -178,7 +178,7 @@ class _RemindersScreenState extends State<RemindersScreen>
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          color: isDark ? const Color(0xFF131B17) : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -197,7 +197,7 @@ class _RemindersScreenState extends State<RemindersScreen>
             Text(
               'Which type of reminder would you like to set?',
               textAlign: TextAlign.center,
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 15,
                 color: isDark ? Colors.grey[300] : Colors.grey[700],
               ),
@@ -215,8 +215,8 @@ class _RemindersScreenState extends State<RemindersScreen>
               onPressed: () => Navigator.pop(ctx),
               child: Text(
                 'Cancel',
-                style: GoogleFonts.spaceGrotesk(
-                  color: const Color(0xFF309249),
+                style: GoogleFonts.dmSans(
+                  color: const Color(0xFF3CB45A),
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
                 ),
@@ -251,8 +251,8 @@ class _RemindersScreenState extends State<RemindersScreen>
         ),
         child: Text(
           c.label,
-          style: GoogleFonts.spaceGrotesk(
-            color: const Color(0xFF309249),
+          style: GoogleFonts.dmSans(
+            color: const Color(0xFF3CB45A),
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
@@ -424,7 +424,7 @@ class _UpcomingTab extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(4, 12, 4, 12),
             child: Text(
               DateFormat('EEE, MMMM d').format(date),
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: Theme.of(context).brightness == Brightness.dark
@@ -468,8 +468,8 @@ class _CategorySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
-    const accent = Color(0xFF309249);
+    final cardColor = isDark ? const Color(0xFF131B17) : Colors.white;
+    const accent = Color(0xFF3CB45A);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
@@ -495,7 +495,7 @@ class _CategorySection extends StatelessWidget {
                 const SizedBox(width: 10),
                 Text(
                   category.label.toUpperCase(),
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.0,
@@ -566,7 +566,7 @@ class _TodayCard extends StatelessWidget {
                   children: [
                     Text(
                       reminder.plantName,
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : Colors.black87,
@@ -577,7 +577,7 @@ class _TodayCard extends StatelessWidget {
                       isExpired
                           ? 'Expired'
                           : '${reminder.notifyTime.hour.toString().padLeft(2, '0')}:${reminder.notifyTime.minute.toString().padLeft(2, '0')}',
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: isExpired
@@ -613,14 +613,14 @@ class _TodayCard extends StatelessWidget {
                     value: 'edit',
                     child: Text(
                       'Edit reminder',
-                      style: GoogleFonts.spaceGrotesk(),
+                      style: GoogleFonts.dmSans(),
                     ),
                   ),
                   PopupMenuItem<String>(
                     value: 'delete',
                     child: Text(
                       'Delete reminder',
-                      style: GoogleFonts.spaceGrotesk(color: Colors.red),
+                      style: GoogleFonts.dmSans(color: Colors.red),
                     ),
                   ),
                 ],
@@ -641,7 +641,7 @@ class _TodayCard extends StatelessWidget {
                         width: 2,
                       ),
                       color: reminder.isCompleted
-                          ? const Color(0xFF309249)
+                          ? const Color(0xFF3CB45A)
                           : Colors.transparent,
                     ),
                     child: reminder.isCompleted
@@ -669,8 +669,8 @@ class _UpcomingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
-    const accent = Color(0xFF309249);
+    final cardColor = isDark ? const Color(0xFF131B17) : Colors.white;
+    const accent = Color(0xFF3CB45A);
 
     return InkWell(
       onTap: () => showReminderEditorSheet(
@@ -703,7 +703,7 @@ class _UpcomingCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     category.label.toUpperCase(),
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.0,
@@ -736,14 +736,14 @@ class _UpcomingCard extends StatelessWidget {
                       value: 'edit',
                       child: Text(
                         'Edit reminder',
-                        style: GoogleFonts.spaceGrotesk(),
+                        style: GoogleFonts.dmSans(),
                       ),
                     ),
                     PopupMenuItem<String>(
                       value: 'delete',
                       child: Text(
                         'Delete reminder',
-                        style: GoogleFonts.spaceGrotesk(color: Colors.red),
+                        style: GoogleFonts.dmSans(color: Colors.red),
                       ),
                     ),
                   ],
@@ -761,7 +761,7 @@ class _UpcomingCard extends StatelessWidget {
                     children: [
                       Text(
                         reminder.plantName,
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
                           color: isDark ? Colors.white : Colors.black87,
@@ -770,7 +770,7 @@ class _UpcomingCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         '${reminder.notifyTime.hour.toString().padLeft(2, '0')}:${reminder.notifyTime.minute.toString().padLeft(2, '0')}',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                           color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -846,7 +846,7 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               title,
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: isDark ? Colors.grey[400] : Colors.grey[700],
@@ -856,7 +856,7 @@ class _EmptyState extends StatelessWidget {
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 14,
                 color: isDark ? Colors.grey[500] : Colors.grey[600],
               ),
@@ -880,21 +880,21 @@ Future<bool> _deleteReminderWithConfirmation(
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text('Delete reminder?', style: GoogleFonts.spaceGrotesk()),
+      title: Text('Delete reminder?', style: GoogleFonts.dmSans()),
       content: Text(
         'This action cannot be undone.',
-        style: GoogleFonts.spaceGrotesk(),
+        style: GoogleFonts.dmSans(),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
-          child: Text('Cancel', style: GoogleFonts.spaceGrotesk()),
+          child: Text('Cancel', style: GoogleFonts.dmSans()),
         ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, true),
           child: Text(
             'Delete',
-            style: GoogleFonts.spaceGrotesk(color: Colors.red),
+            style: GoogleFonts.dmSans(color: Colors.red),
           ),
         ),
       ],
@@ -916,7 +916,7 @@ Future<bool> _deleteReminderWithConfirmation(
       SnackBar(
         content: Text(
           'Reminder deleted.',
-          style: GoogleFonts.spaceGrotesk(),
+          style: GoogleFonts.dmSans(),
         ),
       ),
     );
@@ -955,7 +955,7 @@ Future<bool> showReminderEditorSheet({
             Expanded(
               child: Text(
                 existing == null ? 'Reminder added.' : 'Reminder updated.',
-                style: GoogleFonts.spaceGrotesk(
+                style: GoogleFonts.dmSans(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
                 ),
@@ -963,7 +963,7 @@ Future<bool> showReminderEditorSheet({
             ),
           ],
         ),
-        backgroundColor: const Color(0xFF309249),
+        backgroundColor: const Color(0xFF3CB45A),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
       ),
@@ -1072,9 +1072,9 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final bg = isDark ? const Color(0xFF131B17) : Colors.white;
     final fieldBg = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF1F1F1);
-    const accent = Color(0xFF309249);
+    const accent = Color(0xFF3CB45A);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -1099,7 +1099,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                       onTap: () => Navigator.pop(context),
                       child: Text(
                         'Cancel',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                             color: accent,
                             fontSize: 16,
                             fontWeight: FontWeight.w600),
@@ -1109,7 +1109,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                       child: Center(
                         child: Text(
                           widget.category.label,
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: isDark ? Colors.white : Colors.black87,
@@ -1121,7 +1121,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                       onTap: _timeValidationError == null ? _onSave : null,
                       child: Text(
                         'Done',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                             color: _timeValidationError == null
                                 ? accent
                                 : Colors.grey,
@@ -1145,7 +1145,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                         label: 'Plant',
                         trailing: Text(
                           _plantName,
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             color: isDark ? Colors.white : Colors.black87,
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -1163,7 +1163,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                           label: 'Water amount',
                           trailing: Text(
                             _waterAmount,
-                            style: GoogleFonts.spaceGrotesk(
+                            style: GoogleFonts.dmSans(
                               color: isDark ? Colors.white : Colors.black87,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1180,7 +1180,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                         label: 'Repeat',
                         trailing: Text(
                           _repeat.label,
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             color: isDark ? Colors.white : Colors.black87,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1196,7 +1196,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                         label: 'Start Day',
                         trailing: Text(
                           DateFormat('d MMMM').format(_startDate),
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             color: isDark ? Colors.white : Colors.black87,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1207,7 +1207,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                         padding: const EdgeInsets.fromLTRB(16, 6, 0, 0),
                         child: Text(
                           'Choose the date of the first action',
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             fontSize: 12,
                             color: isDark ? Colors.grey[500] : Colors.grey[600],
                           ),
@@ -1222,7 +1222,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                         label: 'Notify',
                         trailing: Text(
                           '${_notifyTime.hour.toString().padLeft(2, '0')}:${_notifyTime.minute.toString().padLeft(2, '0')}',
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             color: isDark ? Colors.white : Colors.black87,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1233,7 +1233,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                         padding: const EdgeInsets.fromLTRB(16, 6, 0, 0),
                         child: Text(
                           'Choose the time for notification',
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             fontSize: 12,
                             color: isDark ? Colors.grey[500] : Colors.grey[600],
                           ),
@@ -1250,7 +1250,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                               Expanded(
                                 child: Text(
                                   _timeValidationError!,
-                                  style: GoogleFonts.spaceGrotesk(
+                                  style: GoogleFonts.dmSans(
                                     fontSize: 12,
                                     color: Colors.redAccent,
                                     fontWeight: FontWeight.w500,
@@ -1275,7 +1275,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                             ),
                             child: Text(
                               'Delete Reminder',
-                              style: GoogleFonts.spaceGrotesk(
+                              style: GoogleFonts.dmSans(
                                 color: Colors.red,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
@@ -1325,7 +1325,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
             Expanded(
               child: Text(
                 label,
-                style: GoogleFonts.spaceGrotesk(
+                style: GoogleFonts.dmSans(
                   fontSize: 16,
                   color: isDark ? Colors.white : Colors.black87,
                   fontWeight: FontWeight.w500,
@@ -1359,7 +1359,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          color: isDark ? const Color(0xFF131B17) : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -1369,7 +1369,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
           children: [
             Text(
               'Choose plant',
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: isDark ? Colors.white : Colors.black87,
@@ -1382,14 +1382,14 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                 const _PickedPlant('Tomato', null),
               ),
               leading:
-                  const Icon(Icons.local_florist, color: Color(0xFF309249)),
+                  const Icon(Icons.local_florist, color: Color(0xFF3CB45A)),
               title: Text(
                 'Tomato',
-                style: GoogleFonts.spaceGrotesk(
+                style: GoogleFonts.dmSans(
                     color: isDark ? Colors.white : Colors.black87),
               ),
               subtitle: Text('Default tomato plant',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                       color: isDark ? Colors.grey[500] : Colors.grey[600])),
             ),
             if (scans.isNotEmpty) ...[
@@ -1398,7 +1398,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Text(
                   'From your recent scans',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 13,
                     color: isDark ? Colors.grey[500] : Colors.grey[600],
                   ),
@@ -1429,7 +1429,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                           : const Icon(Icons.local_florist),
                       title: Text(
                         s.predictedDisease,
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                             color: isDark ? Colors.white : Colors.black87),
                       ),
                     );
@@ -1457,7 +1457,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          color: isDark ? const Color(0xFF131B17) : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1470,9 +1470,9 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                   title: Text(
                     opt,
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 16,
-                      color: const Color(0xFF309249),
+                      color: const Color(0xFF3CB45A),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1492,7 +1492,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          color: isDark ? const Color(0xFF131B17) : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1504,8 +1504,8 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                     title: Text(
                       r.label,
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.spaceGrotesk(
-                        color: const Color(0xFF309249),
+                      style: GoogleFonts.dmSans(
+                        color: const Color(0xFF3CB45A),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -1604,7 +1604,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.message, style: GoogleFonts.spaceGrotesk()),
+            content: Text(e.message, style: GoogleFonts.dmSans()),
             backgroundColor: Colors.redAccent,
           ),
         );

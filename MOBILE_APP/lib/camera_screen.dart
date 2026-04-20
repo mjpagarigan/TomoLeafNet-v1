@@ -13,6 +13,7 @@ import 'core/services/leaf_detector_service.dart';
 import 'diagnose_result_screen.dart';
 import 'identify_result_screen.dart';
 import 'widgets/guided_onboarding_tutorial.dart';
+import 'widgets/tomo_ui.dart';
 
 class CameraScreen extends StatefulWidget {
   final String scanType;
@@ -34,11 +35,28 @@ class _CameraScreenState extends State<CameraScreen>
   bool _streamRunning = false;
   bool _isAppActive = true;
   bool _isFilipino = false;
+  bool _isTutorialVisible = false;
+  int _tutorialStepIndex = 0;
 
   final LeafDetectorService _leafDetectorService = LeafDetectorService();
   DetectionResult? _detectionResult;
   Timer? _detectionTimer;
   CameraImage? _latestFrame;
+
+  // Temporal smoothing: require 3-of-5 recent frames to agree on "tomato_leaf"
+  // before showing the green indicator. Prevents transient false positives.
+  static const int _smoothingWindowSize = 5;
+  static const int _smoothingThreshold = 3;
+  final List<bool> _recentDetections = [];
+  final GlobalKey _modeTutorialKey = GlobalKey(debugLabel: 'camera-mode-pill');
+  final GlobalKey _statusTutorialKey =
+      GlobalKey(debugLabel: 'camera-status-card');
+  final GlobalKey _galleryTutorialKey =
+      GlobalKey(debugLabel: 'camera-gallery-button');
+  final GlobalKey _captureTutorialKey =
+      GlobalKey(debugLabel: 'camera-capture-button');
+  final GlobalKey _flashTutorialKey =
+      GlobalKey(debugLabel: 'camera-flash-button');
 
   @override
   void initState() {
@@ -171,6 +189,7 @@ class _CameraScreenState extends State<CameraScreen>
     _detectionTimer?.cancel();
     _detectionTimer = null;
     _latestFrame = null;
+    _recentDetections.clear();
 
     if (!_streamRunning) {
       return;
@@ -194,14 +213,32 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       final result = await _leafDetectorService.detect(cameraImage);
       if (!mounted || _isProcessing) return;
+
+      // Temporal smoothing: track recent frame results
+      _recentDetections.add(result.isTomatoLeaf);
+      if (_recentDetections.length > _smoothingWindowSize) {
+        _recentDetections.removeAt(0);
+      }
+      final positiveCount =
+          _recentDetections.where((d) => d).length;
+      final smoothedIsTomato = positiveCount >= _smoothingThreshold;
+
+      // Build a smoothed result that reflects the temporal consensus
+      final smoothedResult = DetectionResult(
+        label: smoothedIsTomato
+            ? LeafDetectorService.tomatoLeafLabel
+            : LeafDetectorService.notTomatoLeafLabel,
+        confidence: result.confidence,
+      );
+
       final previous = _detectionResult;
       final shouldUpdate = previous == null ||
-          previous.label != result.label ||
-          (previous.confidence - result.confidence).abs() >= 0.05;
+          previous.label != smoothedResult.label ||
+          (previous.confidence - smoothedResult.confidence).abs() >= 0.05;
 
       if (shouldUpdate) {
         setState(() {
-          _detectionResult = result;
+          _detectionResult = smoothedResult;
         });
       }
     } catch (e) {
@@ -415,7 +452,76 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _showTutorial() async {
-    await OnboardingTutorial.showTutorial(context);
+    if (!mounted) return;
+    setState(() {
+      _tutorialStepIndex = 0;
+      _isTutorialVisible = true;
+    });
+  }
+
+  List<TutorialStepData> _buildCameraTutorialSteps() {
+    return [
+      TutorialStepData(
+        targetKey: _modeTutorialKey,
+        pageIndex: 0,
+        icon: widget.scanType == 'identify' ? Icons.search : Icons.healing,
+        title:
+            widget.scanType == 'identify' ? 'Identify mode' : 'Diagnose mode',
+        description: widget.scanType == 'identify'
+            ? 'Use Identify for a quick result when you want to know what the leaf likely is.'
+            : 'Use Diagnose when you want the full disease result with guide details and next-step help.',
+        preferredPlacement: TutorialCardPlacement.below,
+      ),
+      TutorialStepData(
+        targetKey: _statusTutorialKey,
+        pageIndex: 0,
+        icon: Icons.center_focus_strong,
+        title: 'Watch the capture guide',
+        description:
+            'Keep the tomato leaf inside the frame. The message below tells you when the camera likely sees a tomato leaf clearly.',
+        preferredPlacement: TutorialCardPlacement.above,
+      ),
+      TutorialStepData(
+        targetKey: _galleryTutorialKey,
+        pageIndex: 0,
+        icon: Icons.photo_library_outlined,
+        title: 'Pick from gallery',
+        description:
+            'Tap here if you already have a leaf photo saved on your phone and want to scan it instead of taking a new one.',
+        preferredPlacement: TutorialCardPlacement.above,
+      ),
+      TutorialStepData(
+        targetKey: _captureTutorialKey,
+        pageIndex: 0,
+        icon: Icons.camera_alt_rounded,
+        title: 'Capture the leaf',
+        description:
+            'Tap the green camera button to take the photo. The app will crop it and open the result screen right after capture.',
+        preferredPlacement: TutorialCardPlacement.above,
+      ),
+      TutorialStepData(
+        targetKey: _flashTutorialKey,
+        pageIndex: 0,
+        icon: Icons.flash_on,
+        title: 'Adjust the flash',
+        description:
+            'Use this button if the leaf is too dark. You can switch between flash off, torch, and auto depending on the lighting.',
+        preferredPlacement: TutorialCardPlacement.above,
+      ),
+    ];
+  }
+
+  void _goToTutorialStep(int index) {
+    final steps = _buildCameraTutorialSteps();
+    if (steps.isEmpty) return;
+    setState(() {
+      _tutorialStepIndex = index.clamp(0, steps.length - 1);
+    });
+  }
+
+  void _closeTutorial() {
+    if (!mounted) return;
+    setState(() => _isTutorialVisible = false);
   }
 
   @override
@@ -424,13 +530,13 @@ class _CameraScreenState extends State<CameraScreen>
       return const Scaffold(
         backgroundColor: Colors.black,
         body:
-            Center(child: CircularProgressIndicator(color: Color(0xFF309249))),
+            Center(child: CircularProgressIndicator(color: Color(0xFF3CB45A))),
       );
     }
 
     final isIdentify = widget.scanType == 'identify';
     final modeColor =
-        isIdentify ? const Color(0xFF4CAF50) : const Color(0xFF78909C);
+        isIdentify ? TomoPalette.primary : const Color(0xFF78909C);
     final modeLabel = isIdentify ? "Identify Mode" : "Diagnose Mode";
 
     return Scaffold(
@@ -462,8 +568,8 @@ class _CameraScreenState extends State<CameraScreen>
                     const SizedBox(height: 16),
                     Text(
                       _isFilipino ? "Pinoproseso..." : "Processing...",
-                      style: GoogleFonts.spaceGrotesk(
-                          color: Colors.white, fontSize: 16),
+                      style:
+                          GoogleFonts.dmSans(color: Colors.white, fontSize: 16),
                     ),
                   ],
                 ),
@@ -486,26 +592,38 @@ class _CameraScreenState extends State<CameraScreen>
                         onPressed: () => Navigator.pop(context),
                       ),
                       Container(
+                        key: _modeTutorialKey,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 6),
+                            horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
-                          color: modeColor.withAlpha(64),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: modeColor.withAlpha(128)),
+                          color: Colors.black.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.12),
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              isIdentify ? Icons.search : Icons.healing,
-                              color: modeColor,
-                              size: 16,
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: modeColor,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: modeColor.withOpacity(0.6),
+                                    blurRadius: 6,
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 8),
                             Text(
                               modeLabel,
-                              style: GoogleFonts.spaceGrotesk(
-                                color: modeColor,
+                              style: GoogleFonts.dmSans(
+                                color: Colors.white,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -537,14 +655,22 @@ class _CameraScreenState extends State<CameraScreen>
 
                 // Detection status label
                 AnimatedContainer(
+                  key: _statusTutorialKey,
                   duration: const Duration(milliseconds: 300),
                   margin: const EdgeInsets.symmetric(horizontal: 40),
                   padding:
                       const EdgeInsets.symmetric(vertical: 12, horizontal: 15),
                   decoration: BoxDecoration(
-                    color: _viewfinderColor.withAlpha(50),
+                    color: _viewfinderColor.withAlpha(40),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: _viewfinderColor.withAlpha(120)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _viewfinderColor.withOpacity(0.18),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
                   child: Row(
                     children: [
@@ -562,7 +688,7 @@ class _CameraScreenState extends State<CameraScreen>
                           children: [
                             Text(
                               _statusTitle,
-                              style: GoogleFonts.spaceGrotesk(
+                              style: GoogleFonts.dmSans(
                                 color: Colors.white,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -571,7 +697,7 @@ class _CameraScreenState extends State<CameraScreen>
                             const SizedBox(height: 2),
                             Text(
                               _statusSubtitle,
-                              style: GoogleFonts.spaceGrotesk(
+                              style: GoogleFonts.dmSans(
                                 color: Colors.white70,
                                 fontSize: 11.5,
                               ),
@@ -592,35 +718,72 @@ class _CameraScreenState extends State<CameraScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       GestureDetector(
+                        key: _galleryTutorialKey,
                         onTap: _pickFromGallery,
                         child: Container(
+                          width: 48,
+                          height: 48,
                           decoration: BoxDecoration(
-                              color: Colors.white24,
-                              borderRadius: BorderRadius.circular(8)),
-                          padding: const EdgeInsets.all(12),
-                          child: const Icon(Icons.image, color: Colors.white),
+                            color: Colors.white.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.1),
+                            ),
+                          ),
+                          child: const Icon(Icons.grid_on, color: Colors.white),
                         ),
                       ),
                       GestureDetector(
+                        key: _captureTutorialKey,
                         onTap: _handleCaptureTap,
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
-                          width: 80,
-                          height: 80,
+                          width: 78,
+                          height: 78,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: const Color(0xFF309249),
+                            gradient: const RadialGradient(
+                              colors: [
+                                Color(0xFF56CB74),
+                                Color(0xFF2F8D4A),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.25),
+                              width: 3,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    const Color(0xFF3CB45A).withOpacity(0.35),
+                                blurRadius: 24,
+                                spreadRadius: 2,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
                           ),
                           child: const Icon(
                             Icons.camera_alt,
                             color: Colors.white,
-                            size: 32,
+                            size: 30,
                           ),
                         ),
                       ),
-                      IconButton(
-                        icon: Icon(_getFlashIcon(), color: Colors.white),
-                        onPressed: _toggleFlash,
+                      GestureDetector(
+                        key: _flashTutorialKey,
+                        onTap: _toggleFlash,
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.1),
+                            ),
+                          ),
+                          child: Icon(_getFlashIcon(), color: Colors.white),
+                        ),
                       ),
                     ],
                   ),
@@ -628,6 +791,25 @@ class _CameraScreenState extends State<CameraScreen>
               ],
             ),
           ),
+
+          if (_isTutorialVisible)
+            OnboardingTutorialOverlay(
+              key: ValueKey('camera-tutorial-step-$_tutorialStepIndex'),
+              steps: _buildCameraTutorialSteps(),
+              currentStepIndex: _tutorialStepIndex,
+              onBack: _tutorialStepIndex == 0
+                  ? null
+                  : () => _goToTutorialStep(_tutorialStepIndex - 1),
+              onNext: () {
+                final lastIndex = _buildCameraTutorialSteps().length - 1;
+                if (_tutorialStepIndex >= lastIndex) {
+                  _closeTutorial();
+                } else {
+                  _goToTutorialStep(_tutorialStepIndex + 1);
+                }
+              },
+              onSkip: _closeTutorial,
+            ),
         ],
       ),
     );

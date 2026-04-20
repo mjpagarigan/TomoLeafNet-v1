@@ -9,6 +9,7 @@ import 'identify_result_screen.dart';
 import 'diagnose_result_screen.dart';
 import 'services/firestore_service.dart';
 import 'services/storage_service.dart';
+import 'widgets/tomo_ui.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key, this.tutorialFilterKey});
@@ -86,18 +87,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Delete $count scan${count > 1 ? 's' : ''}?',
-            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
-        content: Text('This action cannot be undone.',
-            style: GoogleFonts.spaceGrotesk()),
+            style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
+        content:
+            Text('This action cannot be undone.', style: GoogleFonts.dmSans()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: GoogleFonts.spaceGrotesk()),
+            child: Text('Cancel', style: GoogleFonts.dmSans()),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text('Delete',
-                style: GoogleFonts.spaceGrotesk(color: Colors.redAccent)),
+                style: GoogleFonts.dmSans(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -117,7 +118,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text('Some scans could not be deleted.',
-                  style: GoogleFonts.spaceGrotesk())),
+                  style: GoogleFonts.dmSans())),
         );
       }
     }
@@ -211,7 +212,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       builder: (ctx) => Container(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          color: isDark ? const Color(0xFF131B17) : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
@@ -227,9 +228,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.visibility, color: Color(0xFF309249)),
+              leading: const Icon(Icons.visibility, color: Color(0xFF3CB45A)),
               title: Text('View Result',
-                  style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w500)),
+                  style: GoogleFonts.dmSans(fontWeight: FontWeight.w500)),
               onTap: () {
                 Navigator.pop(ctx);
                 _openScanResult(scan);
@@ -239,7 +240,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               leading:
                   const Icon(Icons.delete_outline, color: Colors.redAccent),
               title: Text('Delete This Scan',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                       fontWeight: FontWeight.w500, color: Colors.redAccent)),
               onTap: () async {
                 Navigator.pop(ctx);
@@ -247,21 +248,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   context: context,
                   builder: (ctx2) => AlertDialog(
                     title: Text('Delete Scan',
-                        style: GoogleFonts.spaceGrotesk(
-                            fontWeight: FontWeight.w600)),
+                        style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
                     content: Text('Remove this scan from your history?',
-                        style: GoogleFonts.spaceGrotesk()),
+                        style: GoogleFonts.dmSans()),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(ctx2, false),
-                        child:
-                            Text('Cancel', style: GoogleFonts.spaceGrotesk()),
+                        child: Text('Cancel', style: GoogleFonts.dmSans()),
                       ),
                       TextButton(
                         onPressed: () => Navigator.pop(ctx2, true),
                         child: Text('Delete',
-                            style: GoogleFonts.spaceGrotesk(
-                                color: Colors.redAccent)),
+                            style: GoogleFonts.dmSans(color: Colors.redAccent)),
                       ),
                     ],
                   ),
@@ -279,7 +277,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                             content: Text('Failed to delete scan.',
-                                style: GoogleFonts.spaceGrotesk())),
+                                style: GoogleFonts.dmSans())),
                       );
                     }
                   }
@@ -290,7 +288,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               leading: Icon(Icons.close,
                   color: isDark ? Colors.grey[400] : Colors.grey[600]),
               title: Text('Cancel',
-                  style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w500)),
+                  style: GoogleFonts.dmSans(fontWeight: FontWeight.w500)),
               onTap: () => Navigator.pop(ctx),
             ),
           ],
@@ -306,105 +304,107 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 20),
-              // Header with Select/Cancel button
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  if (_isSelectMode)
-                    Text(
-                      "${_selectedScanIds.length} selected",
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black,
-                      ),
-                    )
-                  else
-                    Text(
-                      "My Plant History",
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black,
-                      ),
-                    ),
-                  Row(
-                    children: [
-                      if (_isSelectMode) ...[
-                        if (_isDeleting)
-                          const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.redAccent,
-                            ),
-                          )
-                        else
-                          IconButton(
-                            icon: const Icon(Icons.delete,
-                                color: Colors.redAccent, size: 26),
-                            onPressed: user == null
-                                ? null
-                                : () => _deleteSelected(user.uid),
-                          ),
-                        TextButton(
-                          onPressed: _exitSelectMode,
-                          child: Text('Cancel',
-                              style: GoogleFonts.spaceGrotesk(
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF309249))),
-                        ),
-                      ] else
-                        TextButton(
-                          onPressed: _enterSelectMode,
-                          child: Text('Select',
-                              style: GoogleFonts.spaceGrotesk(
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF309249))),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              // Toggle Switch
-              Container(
-                key: widget.tutorialFilterKey,
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[300],
-                  borderRadius: BorderRadius.circular(25),
-                ),
-                padding: const EdgeInsets.all(4),
-                child: Row(
+      backgroundColor: isDark ? TomoPalette.bg : const Color(0xFFF5F5F0),
+      body: TomoBackdrop(
+        isDark: isDark,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 20),
+                // Header with Select/Cancel button
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _buildToggle("Healthy", true, isDark),
-                    _buildToggle("Infected", false, isDark),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              // History List
-              Expanded(
-                child: user == null
-                    ? Center(
-                        child: Text(
-                          'Sign in to view your scan history.',
-                          style: GoogleFonts.spaceGrotesk(color: Colors.grey),
+                    if (_isSelectMode)
+                      Text(
+                        "${_selectedScanIds.length} selected",
+                        style: GoogleFonts.dmSans(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              isDark ? TomoPalette.text : TomoPalette.lightText,
                         ),
                       )
-                    : _buildHistoryContent(user.uid, isDark),
-              ),
-            ],
+                    else
+                      Text(
+                        "My Plant History",
+                        style: GoogleFonts.dmSans(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              isDark ? TomoPalette.text : TomoPalette.lightText,
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        if (_isSelectMode) ...[
+                          if (_isDeleting)
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.redAccent,
+                              ),
+                            )
+                          else
+                            IconButton(
+                              icon: const Icon(Icons.delete,
+                                  color: Colors.redAccent, size: 26),
+                              onPressed: user == null
+                                  ? null
+                                  : () => _deleteSelected(user.uid),
+                            ),
+                          TextButton(
+                            onPressed: _exitSelectMode,
+                            child: Text('Cancel',
+                                style: GoogleFonts.dmSans(
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF3CB45A))),
+                          ),
+                        ] else
+                          TextButton(
+                            onPressed: _enterSelectMode,
+                            child: Text('Select',
+                                style: GoogleFonts.dmSans(
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF3CB45A))),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                // Toggle Switch
+                TomoGlassCard(
+                  key: widget.tutorialFilterKey,
+                  isDark: isDark,
+                  radius: 18,
+                  padding: const EdgeInsets.all(4),
+                  child: Row(
+                    children: [
+                      _buildToggle("Healthy", true, isDark),
+                      _buildToggle("Infected", false, isDark),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // History List
+                Expanded(
+                  child: user == null
+                      ? Center(
+                          child: Text(
+                            'Sign in to view your scan history.',
+                            style: GoogleFonts.dmSans(color: Colors.grey),
+                          ),
+                        )
+                      : _buildHistoryContent(user.uid, isDark),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -423,9 +423,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: isActive
-                ? (isDark ? const Color(0xFF2C2C2C) : Colors.white)
+                ? (isDark
+                    ? TomoPalette.surfaceRaised
+                    : TomoPalette.lightSurface)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(11),
             boxShadow: isActive
                 ? [
                     BoxShadow(
@@ -439,11 +441,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
           alignment: Alignment.center,
           child: Text(
             label,
-            style: GoogleFonts.spaceGrotesk(
+            style: GoogleFonts.dmSans(
               fontWeight: FontWeight.bold,
               color: isActive
-                  ? (isDark ? Colors.white : Colors.black)
-                  : (isDark ? Colors.grey[500] : Colors.grey[600]),
+                  ? (isDark ? TomoPalette.text : TomoPalette.lightText)
+                  : (isDark
+                      ? TomoPalette.textMuted
+                      : TomoPalette.lightTextSubtle),
             ),
           ),
         ),
@@ -454,7 +458,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget _buildHistoryContent(String userId, bool isDark) {
     if (_isLoadingHistory) {
       return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF309249)),
+        child: CircularProgressIndicator(color: Color(0xFF3CB45A)),
       );
     }
 
@@ -473,12 +477,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
             Icon(
               _showHealthy ? Icons.eco : Icons.search_off,
               size: 60,
-              color: const Color(0xFF309249).withAlpha(80),
+              color: const Color(0xFF3CB45A).withAlpha(80),
             ),
             const SizedBox(height: 16),
             Text(
               _showHealthy ? 'No healthy scans yet' : 'No infected scans yet',
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 16,
                 color: isDark ? Colors.grey[400] : Colors.grey[600],
               ),
@@ -486,7 +490,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             const SizedBox(height: 8),
             Text(
               'Scan a leaf to start tracking!',
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 13,
                 color: isDark ? Colors.grey[500] : Colors.grey[500],
               ),
@@ -509,10 +513,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 onPressed: () => _selectAll(filteredScans),
                 child: Text(
                   'Select All',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
-                    color: const Color(0xFF309249),
+                    color: const Color(0xFF3CB45A),
                   ),
                 ),
               ),
@@ -532,7 +536,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     child: Center(
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Color(0xFF309249),
+                        color: Color(0xFF3CB45A),
                       ),
                     ),
                   );
@@ -600,17 +604,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
         }
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: isSelected
-              ? Border.all(color: const Color(0xFF309249), width: 2)
-              : null,
+          color: isDark ? const Color(0xFF131B17) : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF3CB45A)
+                : (isDark ? const Color(0x12FFFFFF) : Colors.transparent),
+            width: isSelected ? 2 : 1,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withOpacity(isDark ? 0.25 : 0.05),
               blurRadius: 8,
               offset: const Offset(0, 4),
             ),
@@ -628,11 +635,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: isSelected
-                          ? const Color(0xFF309249)
+                          ? const Color(0xFF3CB45A)
                           : Colors.transparent,
                       border: Border.all(
                         color: isSelected
-                            ? const Color(0xFF309249)
+                            ? const Color(0xFF3CB45A)
                             : (isDark ? Colors.grey[600]! : Colors.grey[400]!),
                         width: 2,
                       ),
@@ -663,7 +670,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   width: 20,
                                   height: 20,
                                   child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: Color(0xFF309249)),
+                                      strokeWidth: 2, color: Color(0xFF3CB45A)),
                                 ),
                               ),
                             ),
@@ -690,7 +697,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           Expanded(
                             child: Text(
                               displayName,
-                              style: GoogleFonts.spaceGrotesk(
+                              style: GoogleFonts.dmSans(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
                                 color: isDark ? Colors.white : Colors.black87,
@@ -705,7 +712,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 ? Icons.check_circle
                                 : Icons.warning_rounded,
                             color: isHealthy
-                                ? const Color(0xFF309249)
+                                ? const Color(0xFF3CB45A)
                                 : Colors.redAccent,
                             size: 16,
                           ),
@@ -714,7 +721,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       const SizedBox(height: 4),
                       Text(
                         dateStr,
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           color: Colors.grey[500],
                           fontSize: 12,
                         ),
@@ -763,7 +770,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     scan.confidenceLabel.isNotEmpty
                         ? scan.confidenceLabel
                         : '${(scan.confidenceScore * 100).toInt()}%',
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                       color: _getConfidenceTextColor(scan.confidenceScore),
@@ -784,7 +791,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         const SizedBox(width: 4),
                         Text(
                           "Guide",
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             fontSize: 11,
                             color: isDark ? Colors.grey[400] : Colors.grey[600],
                           ),
@@ -798,17 +805,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     children: [
                       Text(
                         "View Result",
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: const Color(0xFF309249),
+                          color: const Color(0xFF3CB45A),
                         ),
                       ),
                       const SizedBox(width: 2),
                       const Icon(
                         Icons.chevron_right,
                         size: 16,
-                        color: Color(0xFF309249),
+                        color: Color(0xFF3CB45A),
                       ),
                     ],
                   ),
@@ -860,7 +867,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ],
           Text(
             label,
-            style: GoogleFonts.spaceGrotesk(
+            style: GoogleFonts.dmSans(
               fontSize: 11,
               fontWeight: FontWeight.w600,
               color: isDark ? color.withOpacity(0.9) : color,
@@ -883,15 +890,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Color _getConfidenceBadgeColor(double confidence, bool isDark) {
-    if (confidence >= 0.80)
+    if (confidence >= 0.80) {
       return isDark ? const Color(0xFF1B3A1B) : const Color(0xFFE8F3E5);
-    if (confidence >= 0.60)
+    }
+    if (confidence >= 0.60) {
       return isDark ? const Color(0xFF3A3020) : const Color(0xFFFFF3E0);
+    }
     return isDark ? const Color(0xFF3A2020) : const Color(0xFFFFEBEE);
   }
 
   Color _getConfidenceTextColor(double confidence) {
-    if (confidence >= 0.80) return const Color(0xFF309249);
+    if (confidence >= 0.80) return const Color(0xFF3CB45A);
     if (confidence >= 0.60) return const Color(0xFFFF9800);
     return const Color(0xFFF44336);
   }

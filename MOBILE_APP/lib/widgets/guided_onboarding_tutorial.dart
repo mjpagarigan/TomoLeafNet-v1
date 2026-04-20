@@ -322,7 +322,7 @@ class _TutorialPopover extends StatelessWidget {
                     ),
                     child: Text(
                       '${currentStepIndex + 1} / $totalSteps',
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         color: titleColor,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -334,7 +334,7 @@ class _TutorialPopover extends StatelessWidget {
               const SizedBox(height: 18),
               Text(
                 title,
-                style: GoogleFonts.spaceGrotesk(
+                style: GoogleFonts.dmSans(
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                   color: titleColor,
@@ -344,7 +344,7 @@ class _TutorialPopover extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 description,
-                style: GoogleFonts.spaceGrotesk(
+                style: GoogleFonts.dmSans(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                   color: bodyColor,
@@ -362,7 +362,7 @@ class _TutorialPopover extends StatelessWidget {
                     height: 8,
                     decoration: BoxDecoration(
                       color: currentStepIndex == index
-                          ? const Color(0xFF309249)
+                          ? const Color(0xFF3CB45A)
                           : const Color(0xFFD7E6DA),
                       borderRadius: BorderRadius.circular(999),
                     ),
@@ -382,7 +382,7 @@ class _TutorialPopover extends StatelessWidget {
                       ),
                       child: Text(
                         'Back',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                             fontWeight: FontWeight.w700),
                       ),
                     ),
@@ -396,7 +396,7 @@ class _TutorialPopover extends StatelessWidget {
                     child: Text(
                       'Skip',
                       style:
-                          GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w700),
+                          GoogleFonts.dmSans(fontWeight: FontWeight.w700),
                     ),
                   ),
                   const Spacer(),
@@ -414,7 +414,7 @@ class _TutorialPopover extends StatelessWidget {
                     ),
                     child: Text(
                       isLast ? 'Finish' : 'Next',
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),

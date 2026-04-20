@@ -459,4 +459,36 @@ class FirestoreService {
 
     await batch.commit();
   }
+
+  /// Log a rejected or low-confidence scan to the top-level
+  /// `scan_telemetry` collection for aggregated analysis.
+  ///
+  /// Called when the prediction is Not_Tomato, low-confidence (<60%),
+  /// or ambiguous (top-2 gap < 0.15). This data never reaches the
+  /// user's personal scan history but helps the dev team diagnose
+  /// false-positive patterns in the field.
+  Future<void> logScanTelemetry({
+    required String reason,
+    required String predictedLabel,
+    required double confidence,
+    String? secondLabel,
+    double? secondConfidence,
+    double? confidenceGap,
+    String? uid,
+  }) async {
+    try {
+      await _firestore.collection('scan_telemetry').add({
+        'reason': reason,
+        'predictedLabel': predictedLabel,
+        'confidence': confidence,
+        'secondLabel': secondLabel,
+        'secondConfidence': secondConfidence,
+        'confidenceGap': confidenceGap,
+        'uid': uid,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {
+      // Telemetry is best-effort — never block the user flow.
+    }
+  }
 }

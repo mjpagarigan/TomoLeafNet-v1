@@ -58,13 +58,13 @@ class _DiseaseCarouselState extends State<DiseaseCarousel> {
             children: [
               Icon(
                 Icons.compare_arrows,
-                color: const Color(0xFF309249),
+                color: const Color(0xFF3CB45A),
                 size: 20,
               ),
               const SizedBox(width: 8),
               Text(
                 "Compare with Confirmed Cases",
-                style: GoogleFonts.spaceGrotesk(
+                style: GoogleFonts.dmSans(
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
                   color: isDark ? Colors.white : Colors.black87,
@@ -127,7 +127,7 @@ class _DiseaseCarouselState extends State<DiseaseCarousel> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(4),
                 color: _currentPage == i
-                    ? const Color(0xFF309249)
+                    ? const Color(0xFF3CB45A)
                     : (isDark ? Colors.grey[600] : Colors.grey[300]),
               ),
             ),
@@ -227,7 +227,7 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(4),
                     color: _current == i
-                        ? const Color(0xFF309249)
+                        ? const Color(0xFF3CB45A)
                         : Colors.white38,
                   ),
                 ),

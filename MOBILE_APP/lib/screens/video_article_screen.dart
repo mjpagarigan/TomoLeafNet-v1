@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/data/articles_data.dart';
 
-const _accent = Color(0xFF309249);
+const _accent = Color(0xFF3CB45A);
 
 class VideoArticleScreen extends StatefulWidget {
   final ArticleModel article;
@@ -73,7 +73,7 @@ class _VideoArticleScreenState extends State<VideoArticleScreen> {
         SnackBar(
           content: Text(
             'Could not open YouTube right now.',
-            style: GoogleFonts.spaceGrotesk(),
+            style: GoogleFonts.dmSans(),
           ),
         ),
       );
@@ -87,16 +87,16 @@ class _VideoArticleScreenState extends State<VideoArticleScreen> {
 
     return Scaffold(
       backgroundColor:
-          isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
+          isDark ? const Color(0xFF0A0F0C) : const Color(0xFFF5F5F0),
       appBar: AppBar(
         title: Text(
           widget.article.title,
-          style: GoogleFonts.spaceGrotesk(
+          style: GoogleFonts.dmSans(
             fontSize: 16,
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF131B17) : Colors.white,
         elevation: 1,
       ),
       body: Column(
@@ -153,7 +153,7 @@ class _VideoArticleScreenState extends State<VideoArticleScreen> {
                         ),
                         child: Text(
                           'YouTube',
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
                             fontSize: 12,
@@ -170,7 +170,7 @@ class _VideoArticleScreenState extends State<VideoArticleScreen> {
                         icon: const Icon(Icons.open_in_new_rounded, size: 18),
                         label: Text(
                           'Watch',
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -189,7 +189,7 @@ class _VideoArticleScreenState extends State<VideoArticleScreen> {
                 children: [
                   Text(
                     widget.article.title,
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: isDark ? Colors.white : Colors.black87,
@@ -198,7 +198,7 @@ class _VideoArticleScreenState extends State<VideoArticleScreen> {
                   const SizedBox(height: 6),
                   Text(
                     widget.article.source,
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 13,
                       color: isDark ? Colors.grey[400] : Colors.grey[700],
                       fontWeight: FontWeight.w500,
@@ -207,7 +207,7 @@ class _VideoArticleScreenState extends State<VideoArticleScreen> {
                   const SizedBox(height: 16),
                   Text(
                     widget.article.summary,
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       fontSize: 15,
                       height: 1.5,
                       color: isDark ? Colors.grey[300] : Colors.grey[800],
@@ -229,7 +229,7 @@ class _VideoArticleScreenState extends State<VideoArticleScreen> {
                       icon: const Icon(Icons.smart_display_rounded),
                       label: Text(
                         'Open in YouTube',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontWeight: FontWeight.w700,
                           fontSize: 15,
                         ),

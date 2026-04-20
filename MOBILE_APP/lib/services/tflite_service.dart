@@ -78,8 +78,8 @@ class TFLiteService {
 
   /// Preprocess an image file into a Float32List suitable for the model.
   ///
-  /// Applies center-crop + bilinear resize to 224×224.
-  /// MobileNetV3 handles normalization internally, so raw [0, 255] is passed.
+  /// Applies center-crop + bilinear resize to 224×224, then normalizes
+  /// pixels from [0, 255] to [-1, 1] to match MobileNetV3 training input.
   Future<Float32List> preprocessImage(String imagePath) async {
     return compute(_preprocessImageFile, imagePath);
   }
@@ -172,13 +172,14 @@ class TFLiteService {
         final int pixelIdx = (srcY * width + srcX) * 4;
 
         if (pixelIdx + 2 < rgbaBytes.length) {
-          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx].toDouble();       // R
-          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx + 1].toDouble();   // G
-          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx + 2].toDouble();   // B
+          // Normalize [0, 255] → [-1, 1] to match MobileNetV3 training
+          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx].toDouble() / 127.5 - 1.0;       // R
+          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx + 1].toDouble() / 127.5 - 1.0;   // G
+          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx + 2].toDouble() / 127.5 - 1.0;   // B
         } else {
-          inputBuffer[bufIdx++] = 0.0;
-          inputBuffer[bufIdx++] = 0.0;
-          inputBuffer[bufIdx++] = 0.0;
+          inputBuffer[bufIdx++] = -1.0;
+          inputBuffer[bufIdx++] = -1.0;
+          inputBuffer[bufIdx++] = -1.0;
         }
       }
     }
@@ -479,9 +480,10 @@ Float32List _preprocessImageFile(String imagePath) {
   for (int y = 0; y < 224; y++) {
     for (int x = 0; x < 224; x++) {
       final pixel = resized.getPixel(x, y);
-      inputBuffer[idx++] = pixel.r.toDouble();
-      inputBuffer[idx++] = pixel.g.toDouble();
-      inputBuffer[idx++] = pixel.b.toDouble();
+      // Normalize [0, 255] → [-1, 1] to match MobileNetV3 training preprocessing
+      inputBuffer[idx++] = pixel.r.toDouble() / 127.5 - 1.0;
+      inputBuffer[idx++] = pixel.g.toDouble() / 127.5 - 1.0;
+      inputBuffer[idx++] = pixel.b.toDouble() / 127.5 - 1.0;
     }
   }
   return inputBuffer;
@@ -516,9 +518,10 @@ Uint8List _buildHeatmapPng(_HeatmapBuildData data) {
 
       final lutIdx = (val * 255).round().clamp(0, 255);
       final hsvColor = lut[lutIdx];
-      final origR = data.baseBuffer[srcIdx].clamp(0, 255).round();
-      final origG = data.baseBuffer[srcIdx + 1].clamp(0, 255).round();
-      final origB = data.baseBuffer[srcIdx + 2].clamp(0, 255).round();
+      // Convert back from [-1, 1] to [0, 255] for display blending
+      final origR = ((data.baseBuffer[srcIdx] + 1.0) * 127.5).clamp(0, 255).round();
+      final origG = ((data.baseBuffer[srcIdx + 1] + 1.0) * 127.5).clamp(0, 255).round();
+      final origB = ((data.baseBuffer[srcIdx + 2] + 1.0) * 127.5).clamp(0, 255).round();
 
       image.setPixelRgb(
         x,

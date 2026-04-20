@@ -29,8 +29,9 @@ IMG_SIZE = 224
 SEED = 42
 
 # ── Augmentation pipeline ─────────────────────────────────────────────
+# Vertical flip removed: tomato leaves have a natural orientation.
 augment = tf.keras.Sequential([
-    layers.RandomFlip("horizontal_and_vertical"),
+    layers.RandomFlip("horizontal"),
     layers.RandomRotation(0.25),
     layers.RandomZoom((-0.3, 0.15)),
     layers.RandomTranslation(0.2, 0.2),

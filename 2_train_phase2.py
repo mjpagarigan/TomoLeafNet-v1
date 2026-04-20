@@ -1,14 +1,17 @@
 """
-2_train_phase2.py — Phase 2: Fine-Tuning on Field Dataset (Improved v3)
+2_train_phase2.py — Phase 2: Fine-Tuning on Field Dataset (Improved v4)
 
 Loads the Phase 1 warm-up model and fine-tunes MobileNetV3Large on the real
 field dataset using progressive unfreezing across 3 stages.
 
-Improvements over v2:
-  - Mixup alpha reduced 0.2 → 0.1 (less training noise)
+Improvements over v3:
+  - Fixed: vertical flip removed (leaves have natural orientation)
+  - Added: motion blur, random shadow, random erasing augmentations
+    to better match real-world Philippine field capture conditions
+  - Mixup alpha 0.1 (less training noise)
   - 3-stage progressive unfreeze: last 30 → last 60 → all layers
-  - Stage 1 increased to 20 epochs for better stabilization
-  - Total epochs increased to 85 (20 + 20 + 45)
+  - Stage 1: 20 epochs for stabilization
+  - Total epochs: 85 (20 + 20 + 45)
 
 Prerequisites:
     - Run 0_augment_field_dataset.py first (creates DATA-SPLIT/target_field/)
@@ -34,7 +37,9 @@ from tensorflow.keras import layers
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FIELD_DATA_DIR = os.path.join(BASE_DIR, "DATA-SPLIT", "target_field")
 PHASE1_MODEL = os.path.join(BASE_DIR, "MODEL", "phase1_base.keras")
+PHASE1_MODEL_H5 = PHASE1_MODEL.replace(".keras", ".h5")
 FINAL_KERAS = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v4_final.keras")
+FINAL_H5 = FINAL_KERAS.replace(".keras", ".h5")
 FINAL_TFLITE = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v4.tflite")
 RESULTS_DIR = os.path.join(BASE_DIR, "RESULTS")
 CURVES_PATH = os.path.join(RESULTS_DIR, "Phase2_Curves.png")
@@ -54,8 +59,10 @@ TOTAL_EPOCHS = STAGE1_EPOCHS + STAGE2_EPOCHS + STAGE3_EPOCHS  # 85
 MIXUP_ALPHA = 0.1
 
 # ── Augmentation (training only) ─────────────────────────────────────
+# Keras Sequential augmentation block — spatial + photometric transforms.
+# Vertical flip removed: tomato leaves have a natural orientation.
 augment = tf.keras.Sequential([
-    layers.RandomFlip("horizontal_and_vertical"),
+    layers.RandomFlip("horizontal"),
     layers.RandomRotation(0.25),
     layers.RandomZoom((-0.3, 0.15)),
     layers.RandomTranslation(0.2, 0.2),
@@ -63,6 +70,83 @@ augment = tf.keras.Sequential([
     layers.RandomBrightness(0.3),
     layers.GaussianNoise(0.06),  # ~15/255, simulate mobile sensor noise
 ])
+
+
+# ── Extra augmentations for real-world robustness ────────────────────
+# These cover conditions common in Philippine field capture that Keras
+# built-in layers don't support: motion blur, shadows, and occlusion.
+
+def random_motion_blur(images, max_kernel=7):
+    """Simulate hand-shake / wind motion blur with a horizontal kernel."""
+    def _blur(imgs):
+        k = tf.random.uniform([], 3, max_kernel + 1, dtype=tf.int32)
+        # Build a 1D horizontal averaging kernel
+        kernel = tf.ones([1, k, 1, 1], dtype=tf.float32) / tf.cast(k, tf.float32)
+        # Apply per-channel
+        channels = tf.split(imgs, 3, axis=-1)
+        blurred = tf.concat(
+            [tf.nn.depthwise_conv2d(c, kernel, [1, 1, 1, 1], "SAME") for c in channels],
+            axis=-1,
+        )
+        return blurred
+
+    apply = tf.random.uniform([]) < 0.3  # 30% probability
+    return tf.cond(apply, lambda: _blur(images), lambda: images)
+
+
+def random_shadow(images):
+    """Overlay a random dark rectangle to simulate partial shade / canopy shadow."""
+    def _shadow(imgs):
+        shape = tf.shape(imgs)
+        batch, h, w = shape[0], shape[1], shape[2]
+        # Random rectangle covering 20-50% of the image
+        y1 = tf.random.uniform([], 0.0, 0.5)
+        x1 = tf.random.uniform([], 0.0, 0.5)
+        y2 = tf.random.uniform([], y1 + 0.2, tf.minimum(y1 + 0.5, 1.0))
+        x2 = tf.random.uniform([], x1 + 0.2, tf.minimum(x1 + 0.5, 1.0))
+        # Build mask: 1.0 outside shadow, 0.5-0.8 inside (darken)
+        darken = tf.random.uniform([], 0.5, 0.8)
+        rows = tf.cast(tf.range(h), tf.float32) / tf.cast(h, tf.float32)
+        cols = tf.cast(tf.range(w), tf.float32) / tf.cast(w, tf.float32)
+        row_mask = tf.cast((rows >= y1) & (rows < y2), tf.float32)
+        col_mask = tf.cast((cols >= x1) & (cols < x2), tf.float32)
+        mask = tf.einsum("h,w->hw", row_mask, col_mask)  # [H, W]
+        mask = 1.0 - mask * (1.0 - darken)  # shadow region gets darkened
+        mask = tf.reshape(mask, [1, h, w, 1])
+        return imgs * mask
+
+    apply = tf.random.uniform([]) < 0.3  # 30% probability
+    return tf.cond(apply, lambda: _shadow(images), lambda: images)
+
+
+def random_erasing(images, max_patches=3):
+    """CoarseDropout / RandomErasing: black-out small rectangles to simulate
+    occlusion by fingers, stakes, or overlapping leaves."""
+    def _erase(imgs):
+        shape = tf.shape(imgs)
+        h, w = shape[1], shape[2]
+        result = imgs
+        num_patches = tf.random.uniform([], 1, max_patches + 1, dtype=tf.int32)
+        for _ in range(max_patches):
+            ph = tf.random.uniform([], 10, h // 5, dtype=tf.int32)
+            pw = tf.random.uniform([], 10, w // 5, dtype=tf.int32)
+            py = tf.random.uniform([], 0, h - ph, dtype=tf.int32)
+            px = tf.random.uniform([], 0, w - pw, dtype=tf.int32)
+            # Build a mask with 0 in the erased rectangle, 1 elsewhere
+            mask = tf.ones_like(result)
+            indices_h = tf.range(py, py + ph)
+            indices_w = tf.range(px, px + pw)
+            # Use padding to create the erased region
+            pad_mask = tf.pad(
+                tf.zeros([1, ph, pw, 3]),
+                [[0, 0], [py, h - py - ph], [px, w - px - pw], [0, 0]],
+                constant_values=1.0,
+            )
+            result = result * pad_mask
+        return result
+
+    apply = tf.random.uniform([]) < 0.25  # 25% probability
+    return tf.cond(apply, lambda: _erase(images), lambda: images)
 
 
 # ── Cosine decay with linear warmup ──────────────────────────────────
@@ -124,8 +208,14 @@ def mixup(images, labels, alpha=MIXUP_ALPHA):
 
 
 def augment_and_mixup(images, labels):
-    """Apply spatial augmentation, Mixup, then MobileNetV3 preprocessing."""
+    """Apply spatial augmentation, extra real-world augmentations, Mixup,
+    then MobileNetV3 preprocessing."""
     images = augment(images, training=True)
+    # Extra augmentations for field-capture robustness
+    images = random_motion_blur(images)
+    images = random_shadow(images)
+    images = random_erasing(images)
+    images = tf.clip_by_value(images, 0.0, 255.0)
     images, labels = mixup(images, labels)
     # Normalize [0, 255] -> [-1, 1] after augmentation
     images = tf.keras.applications.mobilenet_v3.preprocess_input(images)
@@ -242,13 +332,25 @@ def train():
     steps_per_epoch = len(train_ds)
 
     # ── Load Phase 1 model ────────────────────────────────────────────
-    print(f"\nLoading Phase 1 model: {PHASE1_MODEL}")
-    model = tf.keras.models.load_model(PHASE1_MODEL)
+    phase1_model_path = PHASE1_MODEL if os.path.exists(PHASE1_MODEL) else PHASE1_MODEL_H5
+    if not os.path.exists(phase1_model_path):
+        raise FileNotFoundError(
+            "Could not find a Phase 1 model. Expected one of:\n"
+            f"  - {PHASE1_MODEL}\n"
+            f"  - {PHASE1_MODEL_H5}"
+        )
+
+    print(f"\nLoading Phase 1 model: {phase1_model_path}")
+    model = tf.keras.models.load_model(phase1_model_path)
     base = get_base_model(model)
     print(f"Base model has {len(base.layers)} layers total")
 
     os.makedirs(os.path.dirname(FINAL_KERAS), exist_ok=True)
     os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    # Use .h5 for checkpoints to avoid Keras 3 save_model options bug,
+    # then convert to .keras at the end before TFLite export.
+    h5_checkpoint = FINAL_KERAS.replace(".keras", ".h5")
 
     # CSVLogger persists epoch metrics to disk — survives crashes
     csv_logger = tf.keras.callbacks.CSVLogger(CSV_LOG_PATH, append=False)
@@ -273,7 +375,7 @@ def train():
 
     stage1_cbs = [
         tf.keras.callbacks.ModelCheckpoint(
-            FINAL_KERAS, monitor="val_accuracy", save_best_only=True, verbose=1,
+            h5_checkpoint, monitor="val_accuracy", save_best_only=True, verbose=1,
         ),
         csv_logger,
     ]
@@ -309,7 +411,7 @@ def train():
 
     stage2_cbs = [
         tf.keras.callbacks.ModelCheckpoint(
-            FINAL_KERAS, monitor="val_accuracy", save_best_only=True, verbose=1,
+            h5_checkpoint, monitor="val_accuracy", save_best_only=True, verbose=1,
         ),
         csv_logger,
     ]
@@ -348,7 +450,7 @@ def train():
             monitor="val_loss", patience=12, restore_best_weights=True, verbose=1,
         ),
         tf.keras.callbacks.ModelCheckpoint(
-            FINAL_KERAS, monitor="val_accuracy", save_best_only=True, verbose=1,
+            h5_checkpoint, monitor="val_accuracy", save_best_only=True, verbose=1,
         ),
         csv_logger,
     ]
@@ -405,12 +507,25 @@ def train():
     plt.savefig(CURVES_PATH, dpi=150)
     print(f"\nTraining curves saved to: {CURVES_PATH}")
 
-    # ── Export TFLite ─────────────────────────────────────────────────
-    print("\nExporting TFLite model...")
+    # ── Load best checkpoint and try native .keras export ───────────
+    print(f"\nLoading best checkpoint: {h5_checkpoint}")
     best_model = tf.keras.models.load_model(
-        FINAL_KERAS,
+        h5_checkpoint,
         custom_objects={"WarmupCosineDecay": WarmupCosineDecay},
     )
+    try:
+        print(f"Converting {h5_checkpoint} -> {FINAL_KERAS}")
+        best_model.save(FINAL_KERAS)
+    except ValueError as e:
+        if "not supported with the native Keras format" not in str(e):
+            raise
+        print(
+            "Native .keras export is not supported in this environment. "
+            f"Keeping the compatible H5 checkpoint instead: {FINAL_H5}"
+        )
+
+    # ── Export TFLite ─────────────────────────────────────────────────
+    print("Exporting TFLite model...")
 
     # Save to SavedModel in system temp dir to avoid OneDrive file locks
     import shutil

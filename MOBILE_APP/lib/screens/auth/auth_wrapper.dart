@@ -19,7 +19,7 @@ class AuthWrapper extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
               body: Center(
-                child: CircularProgressIndicator(color: Color(0xFF309249)),
+                child: CircularProgressIndicator(color: Color(0xFF3CB45A)),
               ),
             );
           }

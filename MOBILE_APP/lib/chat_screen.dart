@@ -1,11 +1,13 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+
 import 'app_session.dart';
 import 'models/scan_model.dart';
 import 'services/chat_service.dart';
 import 'services/firestore_service.dart';
+import 'widgets/tomo_ui.dart';
 
 class ChatMessage {
   final String text;
@@ -37,27 +39,24 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<ChatMessage> _messages = [];
   bool _isTyping = false;
 
+  static const List<String> _suggestedQuestions = [
+    "Why are my tomato leaves showing white trails?",
+    "How do I treat Early Blight on my tomato plant?",
+    "What does Leaf Mold look like?",
+    "My plant looks healthy - how do I keep it that way?",
+    "My confidence score was low - should I be worried?",
+  ];
+
   @override
   void initState() {
     super.initState();
     _chatService.warmBackend();
   }
 
-  static const List<String> _suggestedQuestions = [
-    "Why are my tomato leaves showing white trails?",
-    "How do I treat Early Blight on my tomato plant?",
-    "What does Leaf Mold look like?",
-    "My plant looks healthy — how do I keep it that way?",
-    "My confidence score was low — should I be worried?",
-  ];
-
   bool get _isAuthenticated => FirebaseAuth.instance.currentUser != null;
   bool get _isGuest => AppSession.instance.isGuest;
   bool get _canChat => _isAuthenticated || _isGuest;
 
-  /// Fetch the user's 5 most recent scans from Firestore and format them
-  /// as the payload Tomo's backend expects. Returns an empty list on
-  /// failure so the chat still works offline or for brand-new users.
   Future<List<Map<String, dynamic>>> _fetchScanHistoryPayload() async {
     if (_isGuest) return const [];
     final user = FirebaseAuth.instance.currentUser;
@@ -84,8 +83,6 @@ class _ChatScreenState extends State<ChatScreen> {
     };
   }
 
-  /// Convert a DateTime into a human-readable relative time string
-  /// (e.g. "2 days ago", "3 hours ago") that Tomo can reference in replies.
   String _relativeTime(DateTime when) {
     final diff = DateTime.now().difference(when);
     if (diff.inSeconds < 60) return 'just now';
@@ -130,7 +127,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      // Build conversation history for the backend
       final history = _messages
           .skip(_messages.length > 10 ? _messages.length - 10 : 0)
           .map((m) => {
@@ -139,8 +135,6 @@ class _ChatScreenState extends State<ChatScreen> {
               })
           .toList();
 
-      // Fetch the user's 5 most recent scans so Tomo can give
-      // context-aware, confidence-calibrated replies.
       final scanHistory = await _fetchScanHistoryPayload();
 
       final reply = await _chatService.sendMessage(
@@ -203,64 +197,106 @@ class _ChatScreenState extends State<ChatScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
-      appBar: AppBar(
-        title: Text('Tomo — Plant Assistant',
-            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600)),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          if (_messages.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              onPressed: _clearChat,
-              tooltip: 'Clear chat',
-            ),
-        ],
+      backgroundColor: isDark ? TomoPalette.bg : const Color(0xFFF5F5F0),
+      body: TomoBackdrop(
+        isDark: isDark,
+        child: SafeArea(
+          child: _buildChat(theme, isDark),
+        ),
       ),
-      body: _buildChat(theme, isDark),
     );
   }
 
   Widget _buildChat(ThemeData theme, bool isDark) {
-    final cardColor =
-        isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF);
     final badgeBgColor =
-        isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5);
-    final shadowOpacity = isDark ? 0.55 : 0.18;
+        isDark ? const Color(0xFF1F3025) : const Color(0xFFE8F3E5);
+    final canPop = Navigator.of(context).canPop();
 
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+          child: Row(
+            children: [
+              if (canPop) ...[
+                Container(
+                  decoration: TomoDecorations.pill(isDark: isDark),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    color: isDark ? TomoPalette.text : TomoPalette.lightText,
+                    onPressed: () => Navigator.pop(context),
+                    tooltip: 'Back',
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tomo',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color:
+                            isDark ? TomoPalette.text : TomoPalette.lightText,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Plant Health Assistant',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13,
+                        color: isDark
+                            ? TomoPalette.textMuted
+                            : TomoPalette.lightTextSubtle,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_messages.isNotEmpty)
+                Container(
+                  decoration: TomoDecorations.pill(isDark: isDark),
+                  child: IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    color:
+                        isDark ? TomoPalette.textSubtle : TomoPalette.lightText,
+                    onPressed: _clearChat,
+                    tooltip: 'Clear chat',
+                  ),
+                ),
+            ],
+          ),
+        ),
         if (_isGuest)
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF2A3C2A) : const Color(0xFFE8F3E5),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Text(
-              'Guest mode: chat is available, but messages and scan context are not saved.',
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white70 : const Color(0xFF206020),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: TomoGlassCard(
+              isDark: isDark,
+              radius: 16,
+              color: isDark ? const Color(0x991F3025) : const Color(0xFFE8F3E5),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Text(
+                'Guest mode: chat is available, but messages and scan context are not saved.',
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? Colors.white70 : const Color(0xFF206020),
+                ),
               ),
             ),
           ),
-        // Suggested questions (show only when no messages)
         if (_messages.isEmpty)
-          Container(
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Suggested questions:',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 12,
                     color: theme.colorScheme.onSurface.withAlpha(120),
                   ),
@@ -272,16 +308,17 @@ class _ChatScreenState extends State<ChatScreen> {
                   children: _suggestedQuestions.map((q) {
                     return GestureDetector(
                       onTap: () => _sendMessage(q),
-                      child: Container(
+                      child: TomoGlassCard(
+                        isDark: isDark,
+                        radius: 16,
+                        color: badgeBgColor.withOpacity(isDark ? 0.70 : 0.92),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: badgeBgColor,
-                          borderRadius: BorderRadius.circular(12),
+                          horizontal: 14,
+                          vertical: 10,
                         ),
                         child: Text(
                           q,
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             fontSize: 12,
                             color: isDark
                                 ? Colors.white70
@@ -296,8 +333,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
           ),
-
-        // Messages
         Expanded(
           child: _messages.isEmpty
               ? Center(
@@ -310,20 +345,34 @@ class _ChatScreenState extends State<ChatScreen> {
                           width: 72,
                           height: 72,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF309249).withAlpha(30),
                             shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                TomoPalette.primaryBright,
+                                TomoPalette.primaryDeep,
+                              ],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: TomoPalette.primary.withOpacity(0.25),
+                                blurRadius: 30,
+                                spreadRadius: 2,
+                              ),
+                            ],
                           ),
                           child: const Icon(
                             Icons.eco,
-                            size: 38,
-                            color: Color(0xFF309249),
+                            size: 36,
+                            color: Colors.white,
                           ),
                         ),
                         const SizedBox(height: 20),
                         Text(
                           "Hi! I'm Tomo 🌿",
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             fontSize: 22,
                             fontWeight: FontWeight.w700,
                             color: theme.colorScheme.onSurface,
@@ -331,9 +380,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          "your personal plant health assistant.\nAsk me anything about your tomato plants, recent scans, or how to treat leaf diseases.",
+                          "Your personal plant health assistant.\nAsk me anything about your tomato plants, recent scans, or how to treat leaf diseases.",
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.dmSans(
                             fontSize: 14,
                             height: 1.5,
                             color: theme.colorScheme.onSurface.withAlpha(140),
@@ -356,8 +405,6 @@ class _ChatScreenState extends State<ChatScreen> {
                   },
                 ),
         ),
-
-        // Input field
         Container(
           key: widget.tutorialInputKey,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -369,34 +416,25 @@ class _ChatScreenState extends State<ChatScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(30),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(shadowOpacity),
-                              blurRadius: 28,
-                              offset: const Offset(0, 14),
-                            ),
-                          ],
-                        ),
+                      child: TomoGlassCard(
+                        isDark: isDark,
+                        radius: 24,
                         child: TextField(
                           controller: _textController,
-                          style: GoogleFonts.spaceGrotesk(fontSize: 14),
+                          style: GoogleFonts.dmSans(fontSize: 14),
                           decoration: InputDecoration(
                             hintText: 'Type your question...',
-                            hintStyle: GoogleFonts.spaceGrotesk(
-                              fontSize: 14,
-                              color: theme.colorScheme.onSurface.withAlpha(100),
-                            ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(30),
                               borderSide: BorderSide.none,
                             ),
-                            filled: true,
-                            fillColor: cardColor,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            filled: false,
                             contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 14),
+                              horizontal: 20,
+                              vertical: 14,
+                            ),
                           ),
                           textInputAction: TextInputAction.send,
                           onSubmitted: _sendMessage,
@@ -407,21 +445,24 @@ class _ChatScreenState extends State<ChatScreen> {
                     GestureDetector(
                       onTap: () => _sendMessage(_textController.text),
                       child: Container(
-                        width: 50,
-                        height: 50,
+                        width: 48,
+                        height: 48,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF309249),
-                          shape: BoxShape.circle,
+                          color: TomoPalette.primary,
+                          borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF309249).withOpacity(0.4),
-                              blurRadius: 12,
-                              offset: const Offset(0, 6),
-                            )
+                              color: TomoPalette.primary.withOpacity(0.4),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
+                            ),
                           ],
                         ),
-                        child: const Icon(Icons.send,
-                            color: Colors.white, size: 22),
+                        child: const Icon(
+                          Icons.send,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
                     ),
                   ],
@@ -437,7 +478,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessageBubble(
-      ChatMessage message, bool isDark, ThemeData theme) {
+    ChatMessage message,
+    bool isDark,
+    ThemeData theme,
+  ) {
     final isUser = message.isUser;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -449,8 +493,12 @@ class _ChatScreenState extends State<ChatScreen> {
           if (!isUser) ...[
             CircleAvatar(
               radius: 16,
-              backgroundColor: const Color(0xFF309249).withAlpha(40),
-              child: const Icon(Icons.eco, size: 18, color: Color(0xFF309249)),
+              backgroundColor: const Color(0xFF3CB45A).withAlpha(40),
+              child: const Icon(
+                Icons.eco,
+                size: 18,
+                color: Color(0xFF3CB45A),
+              ),
             ),
             const SizedBox(width: 8),
           ],
@@ -464,41 +512,45 @@ class _ChatScreenState extends State<ChatScreen> {
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: isUser
-                        ? const Color(0xFF309249)
+                        ? TomoPalette.primary
                         : (isDark
-                            ? const Color(0xFF2C2C2C)
-                            : const Color(0xFFF0F0F0)),
+                            ? const Color(0xE6131B17)
+                            : const Color(0xF0FFFFFF)),
+                    border: (!isUser && isDark)
+                        ? Border.all(color: const Color(0x12FFFFFF))
+                        : null,
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(8),
-                      topRight: const Radius.circular(8),
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
                       bottomLeft: Radius.circular(isUser ? 18 : 4),
                       bottomRight: Radius.circular(isUser ? 4 : 18),
                     ),
                   ),
                   child: RichText(
                     text: TextSpan(
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontSize: 14,
                         color:
                             isUser ? Colors.white : theme.colorScheme.onSurface,
                         height: 1.4,
                       ),
                       children: _parseMarkdown(
-                          message.text,
-                          GoogleFonts.spaceGrotesk(
-                            fontSize: 14,
-                            color: isUser
-                                ? Colors.white
-                                : theme.colorScheme.onSurface,
-                            height: 1.4,
-                          )),
+                        message.text,
+                        GoogleFonts.dmSans(
+                          fontSize: 14,
+                          color: isUser
+                              ? Colors.white
+                              : theme.colorScheme.onSurface,
+                          height: 1.4,
+                        ),
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   _formatTime(message.timestamp),
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 10,
                     color: theme.colorScheme.onSurface.withAlpha(80),
                   ),
@@ -517,20 +569,30 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 16,
-            backgroundColor: const Color(0xFF309249).withAlpha(40),
-            child: const Icon(Icons.eco, size: 18, color: Color(0xFF309249)),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [TomoPalette.primaryBright, TomoPalette.primaryDeep],
+              ),
+            ),
+            child: const Icon(Icons.eco, size: 16, color: Colors.white),
           ),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF0F0F0),
+              color: isDark ? const Color(0xE6131B17) : const Color(0xF0FFFFFF),
+              border:
+                  isDark ? Border.all(color: const Color(0x12FFFFFF)) : null,
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(8),
-                topRight: Radius.circular(8),
-                bottomRight: Radius.circular(8),
+                topLeft: Radius.circular(18),
+                topRight: Radius.circular(18),
+                bottomRight: Radius.circular(18),
                 bottomLeft: Radius.circular(4),
               ),
             ),
@@ -639,7 +701,7 @@ class _TypingDotsState extends State<_TypingDots>
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF309249)
+                    color: const Color(0xFF3CB45A)
                         .withAlpha((150 + (t * 105)).toInt().clamp(0, 255)),
                     shape: BoxShape.circle,
                   ),

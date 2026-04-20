@@ -100,16 +100,16 @@ class _ArticleReaderScreenState extends State<ArticleReaderScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0),
+      backgroundColor: isDark ? const Color(0xFF0A0F0C) : const Color(0xFFF5F5F0),
       appBar: AppBar(
         title: Text(
           widget.article.title,
-          style: GoogleFonts.spaceGrotesk(
+          style: GoogleFonts.dmSans(
             fontSize: 16,
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF131B17) : Colors.white,
         elevation: 1,
         actions: [
           IconButton(
@@ -126,7 +126,7 @@ class _ArticleReaderScreenState extends State<ArticleReaderScreen> {
             const Align(
               alignment: Alignment.topCenter,
               child: LinearProgressIndicator(
-                color: Color(0xFF309249),
+                color: Color(0xFF3CB45A),
                 backgroundColor: Colors.transparent,
               ),
             ),
@@ -140,7 +140,7 @@ class _ArticleReaderScreenState extends State<ArticleReaderScreen> {
                   Text(
                     "Unable to load article.\nPlease check your connection.",
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.spaceGrotesk(
+                    style: GoogleFonts.dmSans(
                       color: isDark ? Colors.grey[400] : Colors.grey[700],
                       fontSize: 16,
                     ),
@@ -151,10 +151,10 @@ class _ArticleReaderScreenState extends State<ArticleReaderScreen> {
                       _controller.reload();
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF309249),
+                      backgroundColor: const Color(0xFF3CB45A),
                       foregroundColor: Colors.white,
                     ),
-                    child: Text("Retry", style: GoogleFonts.spaceGrotesk()),
+                    child: Text("Retry", style: GoogleFonts.dmSans()),
                   )
                 ],
               ),

@@ -36,7 +36,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             : 'Failed to send reset email. Please try again.';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(msg, style: GoogleFonts.spaceGrotesk()),
+            content: Text(msg, style: GoogleFonts.dmSans()),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.redAccent,
           ),
@@ -50,11 +50,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
+    final bgColor = isDark ? const Color(0xFF0A0F0C) : const Color(0xFFF5F5F0);
     final cardColor = isDark ? const Color(0xFF2A2A2A) : Colors.white;
     final textColor = isDark ? Colors.white : Colors.black87;
     final subtextColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
-    const accentColor = Color(0xFF309249);
+    const accentColor = Color(0xFF3CB45A);
     final shadowOpacity = isDark ? 0.55 : 0.18;
 
     return Scaffold(
@@ -82,7 +82,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const SizedBox(height: 24),
                 Text(
                   _emailSent ? 'Check Your Email' : 'Reset Password',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
                     color: textColor,
@@ -94,7 +94,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ? 'We sent a password reset link to\n${_emailController.text.trim()}'
                       : 'Enter your email to receive a reset link',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.spaceGrotesk(fontSize: 14, color: subtextColor, height: 1.5),
+                  style: GoogleFonts.dmSans(fontSize: 14, color: subtextColor, height: 1.5),
                 ),
                 const SizedBox(height: 32),
 
@@ -119,10 +119,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           TextFormField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
-                            style: GoogleFonts.spaceGrotesk(color: textColor),
+                            style: GoogleFonts.dmSans(color: textColor),
                             decoration: InputDecoration(
                               hintText: 'Email',
-                              hintStyle: GoogleFonts.spaceGrotesk(
+                              hintStyle: GoogleFonts.dmSans(
                                 color: isDark ? Colors.grey[500] : Colors.grey[400],
                                 fontSize: 14,
                               ),
@@ -130,7 +130,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                   color: accentColor, size: 20),
                               filled: true,
                               fillColor: isDark
-                                  ? const Color(0xFF1E1E1E)
+                                  ? const Color(0xFF131B17)
                                   : const Color(0xFFF5F5F5),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
@@ -167,7 +167,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                     )
                                   : Text(
                                       'Send Reset Link',
-                                      style: GoogleFonts.spaceGrotesk(
+                                      style: GoogleFonts.dmSans(
                                         fontSize: 16, fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -195,7 +195,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ),
                       child: Text(
                         'Back to Sign In',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           fontSize: 16, fontWeight: FontWeight.w600,
                         ),
                       ),

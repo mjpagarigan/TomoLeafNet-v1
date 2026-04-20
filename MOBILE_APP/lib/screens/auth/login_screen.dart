@@ -71,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: GoogleFonts.spaceGrotesk()),
+        content: Text(message, style: GoogleFonts.dmSans()),
         behavior: SnackBarBehavior.floating,
         backgroundColor: Colors.redAccent,
       ),
@@ -99,11 +99,11 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F0);
+    final bgColor = isDark ? const Color(0xFF0A0F0C) : const Color(0xFFF5F5F0);
     final cardColor = isDark ? const Color(0xFF2A2A2A) : Colors.white;
     final textColor = isDark ? Colors.white : Colors.black87;
     final subtextColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
-    const accentColor = Color(0xFF309249);
+    const accentColor = Color(0xFF3CB45A);
     final shadowOpacity = isDark ? 0.55 : 0.18;
 
     return Scaffold(
@@ -121,7 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   height: 80,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF5ED866), Color(0xFF309249)],
+                      colors: [Color(0xFF5ED866), Color(0xFF3CB45A)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -139,7 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
                 Text(
                   'TomoLeafNet',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: GoogleFonts.dmSans(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
                     color: textColor,
@@ -148,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Sign in to continue',
-                  style: GoogleFonts.spaceGrotesk(fontSize: 14, color: subtextColor),
+                  style: GoogleFonts.dmSans(fontSize: 14, color: subtextColor),
                 ),
                 const SizedBox(height: 36),
 
@@ -174,7 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          style: GoogleFonts.spaceGrotesk(color: textColor),
+                          style: GoogleFonts.dmSans(color: textColor),
                           decoration: _inputDecoration(
                             'Email',
                             Icons.email_outlined,
@@ -191,7 +191,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         TextFormField(
                           controller: _passwordController,
                           obscureText: _obscurePassword,
-                          style: GoogleFonts.spaceGrotesk(color: textColor),
+                          style: GoogleFonts.dmSans(color: textColor),
                           decoration: _inputDecoration(
                             'Password',
                             Icons.lock_outline,
@@ -224,7 +224,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             child: Text(
                               'Forgot Password?',
-                              style: GoogleFonts.spaceGrotesk(
+                              style: GoogleFonts.dmSans(
                                 color: accentColor,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -256,7 +256,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   )
                                 : Text(
                                     'Sign In',
-                                    style: GoogleFonts.spaceGrotesk(
+                                    style: GoogleFonts.dmSans(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -272,7 +272,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             icon: const Icon(Icons.person_outline, size: 20),
                             label: Text(
                               'Continue as Guest',
-                              style: GoogleFonts.spaceGrotesk(
+                              style: GoogleFonts.dmSans(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -302,7 +302,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
                         'or sign in with',
-                        style: GoogleFonts.spaceGrotesk(fontSize: 12, color: subtextColor),
+                        style: GoogleFonts.dmSans(fontSize: 12, color: subtextColor),
                       ),
                     ),
                     Expanded(child: Divider(color: subtextColor.withOpacity(0.3))),
@@ -325,7 +325,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     label: Text(
                       'Google',
-                      style: GoogleFonts.spaceGrotesk(
+                      style: GoogleFonts.dmSans(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: textColor,
@@ -349,7 +349,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Text(
                       "Don't have an account? ",
-                      style: GoogleFonts.spaceGrotesk(color: subtextColor, fontSize: 14),
+                      style: GoogleFonts.dmSans(color: subtextColor, fontSize: 14),
                     ),
                     GestureDetector(
                       onTap: () => Navigator.push(
@@ -358,7 +358,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: Text(
                         'Sign Up',
-                        style: GoogleFonts.spaceGrotesk(
+                        style: GoogleFonts.dmSans(
                           color: accentColor,
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -379,13 +379,13 @@ class _LoginScreenState extends State<LoginScreen> {
   InputDecoration _inputDecoration(String hint, IconData icon, bool isDark) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: GoogleFonts.spaceGrotesk(
+      hintStyle: GoogleFonts.dmSans(
         color: isDark ? Colors.grey[500] : Colors.grey[400],
         fontSize: 14,
       ),
-      prefixIcon: Icon(icon, color: const Color(0xFF309249), size: 20),
+      prefixIcon: Icon(icon, color: const Color(0xFF3CB45A), size: 20),
       filled: true,
-      fillColor: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF5F5F5),
+      fillColor: isDark ? const Color(0xFF131B17) : const Color(0xFFF5F5F5),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,

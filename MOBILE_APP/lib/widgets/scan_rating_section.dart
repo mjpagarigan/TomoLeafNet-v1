@@ -27,7 +27,7 @@ class ScanRatingSection extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        color: isDark ? const Color(0xFF131B17) : Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -42,7 +42,7 @@ class ScanRatingSection extends StatelessWidget {
           Text(
             'Was this result accurate?',
             textAlign: TextAlign.center,
-            style: GoogleFonts.spaceGrotesk(
+            style: GoogleFonts.dmSans(
               fontSize: 18,
               fontWeight: FontWeight.bold,
               color: isDark ? Colors.white : Colors.black87,
@@ -55,7 +55,7 @@ class ScanRatingSection extends StatelessWidget {
                 child: _RatingButton(
                   icon: Icons.thumb_up_alt_rounded,
                   label: 'Yes',
-                  color: const Color(0xFF309249),
+                  color: const Color(0xFF3CB45A),
                   isSelected: selectedRating == 'thumbs_up',
                   isDisabled: hasSelection || !enabled,
                   onTap: onThumbsUp,
@@ -79,11 +79,11 @@ class ScanRatingSection extends StatelessWidget {
             Text(
               confirmationMessage!,
               textAlign: TextAlign.center,
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: selectedRating == 'thumbs_up'
-                    ? const Color(0xFF309249)
+                    ? const Color(0xFF3CB45A)
                     : Colors.redAccent,
               ),
             ),
@@ -137,7 +137,7 @@ class _RatingButton extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               label,
-              style: GoogleFonts.spaceGrotesk(
+              style: GoogleFonts.dmSans(
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
                 color: isSelected ? color : null,

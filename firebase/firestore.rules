@@ -56,6 +56,12 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Telemetry for rejected / low-confidence scans (write-only from app)
+    match /scan_telemetry/{docId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if false;
+    }
+
     match /scan_correction_requests/{requestId} {
       allow create: if isSignedIn()
         && request.resource.data.ownerUid == request.auth.uid

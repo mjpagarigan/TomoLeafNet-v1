@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TomoLeafNet — Redesign</title>
+<style>/* latin-ext */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("113eee91-d5a6-432a-a280-2b4820a0e959") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("5cff843f-152f-43da-ba94-0c8fa3d42642") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url("71574d62-d331-4797-b012-476549cc4d61") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url("81fe3354-ab12-4bfb-a3fd-d25bfc2d1309") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("71574d62-d331-4797-b012-476549cc4d61") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("81fe3354-ab12-4bfb-a3fd-d25bfc2d1309") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("71574d62-d331-4797-b012-476549cc4d61") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("81fe3354-ab12-4bfb-a3fd-d25bfc2d1309") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("71574d62-d331-4797-b012-476549cc4d61") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("81fe3354-ab12-4bfb-a3fd-d25bfc2d1309") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("71574d62-d331-4797-b012-476549cc4d61") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("81fe3354-ab12-4bfb-a3fd-d25bfc2d1309") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("71574d62-d331-4797-b012-476549cc4d61") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("81fe3354-ab12-4bfb-a3fd-d25bfc2d1309") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<script src="a91b4535-657d-4b19-b970-36a74d7d2afd" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="a58a7078-7d69-45f1-9870-370e4ab868e9" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="abdb35dd-a35d-42c2-aa68-fd377131ca17" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="0cc35a94-e507-485e-9447-491b2336e35e"></script>
+
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0a;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; font-family: 'DM Sans', sans-serif;
+}
+::-webkit-scrollbar { display: none; }
+
+/* Tweaks panel */
+#tweaks-panel {
+  display: none;
+  position: fixed; bottom: 24px; right: 24px;
+  background: rgba(20,20,20,0.95);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px; padding: 20px;
+  z-index: 9999; width: 240px;
+  backdrop-filter: blur(20px);
+  color: #fff; font-family: 'DM Sans', sans-serif;
+}
+#tweaks-panel h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; color: #fff; }
+#tweaks-panel label { font-size: 12px; color: rgba(255,255,255,0.5); display: block; margin-bottom: 4px; }
+#tweaks-panel select, #tweaks-panel input[type=range] {
+  width: 100%; margin-bottom: 14px;
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px; color: #fff; padding: 6px 10px; font-size: 13px;
+}
+</style>
+</head>
+<body>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ─── Design tokens ───────────────────────────────────────────
+const T = {
+  bg:       'oklch(9% 0.025 155)',
+  surface:  'oklch(14% 0.03 155)',
+  surfaceUp:'oklch(19% 0.035 155)',
+  border:   'rgba(255,255,255,0.07)',
+  green:    'oklch(65% 0.2 145)',
+  greenDim: 'oklch(35% 0.12 145)',
+  greenGlow:'oklch(65% 0.2 145)',
+  amber:    'oklch(72% 0.16 85)',
+  red:      'oklch(62% 0.22 22)',
+  text:     'oklch(96% 0.01 155)',
+  textSub:  'oklch(62% 0.025 155)',
+  textMuted:'oklch(42% 0.02 155)',
+};
+
+// ─── Shared micro-components ─────────────────────────────────
+const Chip = ({children, color='green', small=false}) => {
+  const bg = color==='green' ? 'rgba(60,180,90,0.15)' : color==='red' ? 'rgba(220,70,70,0.15)' : color==='amber' ? 'rgba(210,155,60,0.15)' : 'rgba(255,255,255,0.08)';
+  const tc = color==='green' ? T.green : color==='red' ? T.red : color==='amber' ? T.amber : T.textSub;
+  return <span style={{background:bg,color:tc,borderRadius:99,padding:small?'2px 8px':'4px 10px',fontSize:small?10:11,fontWeight:600,letterSpacing:0.3,border:`1px solid ${tc}22`}}>{children}</span>;
+};
+
+const Divider = () => <div style={{height:1,background:T.border,margin:'0 20px'}}/>;
+
+// ─── Bottom Tab Bar ───────────────────────────────────────────
+const TABS = [
+  {id:'home', label:'Home', icon:(a)=>(
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path d="M3 12L12 4l9 8" stroke={a?T.green:'rgba(255,255,255,0.35)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M5 10v9a1 1 0 001 1h4v-4h4v4h4a1 1 0 001-1v-9" stroke={a?T.green:'rgba(255,255,255,0.35)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )},
+  {id:'chat', label:'Tomo AI', icon:(a)=>(
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path d="M12 3C7.03 3 3 6.58 3 11c0 1.98.78 3.78 2.07 5.18L4 21l5.15-1.54A9.2 9.2 0 0012 19c4.97 0 9-3.58 9-8s-4.03-8-9-8z" stroke={a?T.green:'rgba(255,255,255,0.35)'} strokeWidth="2" strokeLinejoin="round" fill={a?'rgba(60,180,90,0.1)':'none'}/>
+    </svg>
+  )},
+  {id:'history', label:'My Plants', icon:(a)=>(
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path d="M12 2C9 2 6 5 6 8c0 4 3 6 6 10 3-4 6-6 6-10 0-3-3-6-6-6z" stroke={a?T.green:'rgba(255,255,255,0.35)'} strokeWidth="2" strokeLinejoin="round" fill={a?'rgba(60,180,90,0.1)':'none'}/>
+    </svg>
+  )},
+  {id:'more', label:'More', icon:(a)=>(
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="5" r="1.5" fill={a?T.green:'rgba(255,255,255,0.35)'}/>
+      <circle cx="12" cy="12" r="1.5" fill={a?T.green:'rgba(255,255,255,0.35)'}/>
+      <circle cx="12" cy="19" r="1.5" fill={a?T.green:'rgba(255,255,255,0.35)'}/>
+    </svg>
+  )},
+];
+
+function TabBar({active, onTab, onScan}) {
+  return (
+    <div style={{position:'absolute',bottom:0,left:0,right:0,height:88,zIndex:100}}>
+      <div style={{
+        position:'absolute',inset:0,
+        background:'rgba(10,14,12,0.85)',
+        backdropFilter:'blur(20px)',
+        borderTop:'1px solid rgba(255,255,255,0.06)',
+      }}/>
+      <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'space-around',height:60,paddingTop:4}}>
+        {TABS.slice(0,2).map(t=>(
+          <button key={t.id} onClick={()=>onTab(t.id)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'8px 16px'}}>
+            {t.icon(active===t.id)}
+            <span style={{fontSize:10,color:active===t.id?T.green:'rgba(255,255,255,0.35)',fontWeight:active===t.id?600:400,fontFamily:'DM Sans'}}>{t.label}</span>
+          </button>
+        ))}
+        {/* FAB */}
+        <button onClick={onScan} style={{
+          width:58,height:58,borderRadius:99,border:'none',cursor:'pointer',
+          background:`linear-gradient(135deg, oklch(68% 0.22 145), oklch(55% 0.2 155))`,
+          boxShadow:`0 4px 20px oklch(65% 0.2 145 / 0.4)`,
+          display:'flex',alignItems:'center',justifyContent:'center',
+          transform:'translateY(-12px)',
+          flexShrink:0,
+        }}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+            <circle cx="11" cy="11" r="8" stroke="white" strokeWidth="2"/>
+            <path d="M8 11h6M11 8v6" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+          </svg>
+        </button>
+        {TABS.slice(2).map(t=>(
+          <button key={t.id} onClick={()=>onTab(t.id)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'8px 16px'}}>
+            {t.icon(active===t.id)}
+            <span style={{fontSize:10,color:active===t.id?T.green:'rgba(255,255,255,0.35)',fontWeight:active===t.id?600:400,fontFamily:'DM Sans'}}>{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Screen: Home ─────────────────────────────────────────────
+function HomeScreen({onNav}) {
+  return (
+    <div style={{background:T.bg,minHeight:'100%',paddingBottom:100,fontFamily:'DM Sans'}}>
+      {/* Header */}
+      <div style={{padding:'72px 20px 20px',background:`linear-gradient(180deg, oklch(12% 0.04 155) 0%, ${T.bg} 100%)`}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{width:38,height:38,borderRadius:99,background:`linear-gradient(135deg,oklch(35% 0.1 155),oklch(22% 0.06 155))`,border:'1.5px solid rgba(255,255,255,0.1)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <span style={{fontSize:16}}>🌿</span>
+            </div>
+            <div>
+              <div style={{fontSize:12,color:T.textMuted,fontWeight:400}}>Good morning</div>
+              <div style={{fontSize:16,color:T.text,fontWeight:700,lineHeight:1.2}}>MJ</div>
+            </div>
+          </div>
+          <button style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.09)',borderRadius:12,width:40,height:40,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" stroke={T.textSub} strokeWidth="2" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+
+        {/* Search */}
+        <div style={{marginTop:18,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:14,display:'flex',alignItems:'center',gap:10,padding:'11px 16px'}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="8" stroke={T.textMuted} strokeWidth="2"/><path d="M21 21l-4.35-4.35" stroke={T.textMuted} strokeWidth="2" strokeLinecap="round"/></svg>
+          <span style={{fontSize:14,color:T.textMuted}}>Search scan history…</span>
+        </div>
+      </div>
+
+      {/* Weather pill */}
+      <div style={{padding:'0 20px 20px'}}>
+        <div style={{background:T.surface,borderRadius:16,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,border:`1px solid ${T.border}`}}>
+          <span style={{fontSize:22}}>☀️</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,color:T.text,fontWeight:600}}>Sunny, 78°F — Good scanning conditions</div>
+            <div style={{fontSize:11,color:T.textMuted}}>Low humidity · Bright light</div>
+          </div>
+          <Chip small>Now</Chip>
+        </div>
+      </div>
+
+      {/* Scanning section */}
+      <div style={{padding:'0 20px'}}>
+        <div style={{fontSize:12,color:T.textMuted,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:14}}>Scan Your Plant</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          {/* Identify card */}
+          <button onClick={()=>onNav('camera','identify')} style={{
+            borderRadius:20,overflow:'hidden',border:'none',cursor:'pointer',
+            background:`linear-gradient(155deg, oklch(22% 0.08 145) 0%, oklch(14% 0.04 155) 100%)`,
+            border:'1px solid rgba(60,180,90,0.2)',
+            padding:'18px 16px 14px',
+            display:'flex',flexDirection:'column',gap:4,alignItems:'flex-start',
+            position:'relative',
+          }}>
+            <div style={{position:'absolute',top:0,right:0,width:80,height:80,borderRadius:'0 20px 0 60px',background:'rgba(60,180,90,0.07)'}}/>
+            <div style={{fontSize:11,color:T.green,fontWeight:600,letterSpacing:0.5,textTransform:'uppercase'}}>Identify</div>
+            <div style={{fontSize:22,fontWeight:800,color:T.text,lineHeight:1.2,textAlign:'left'}}>Recognize any leaf</div>
+            <div style={{marginTop:8,width:32,height:32,borderRadius:99,background:T.green,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </div>
+          </button>
+
+          {/* Diagnose card */}
+          <button onClick={()=>onNav('camera','diagnose')} style={{
+            borderRadius:20,overflow:'hidden',border:'none',cursor:'pointer',
+            background:`linear-gradient(155deg, oklch(20% 0.06 50) 0%, oklch(14% 0.04 155) 100%)`,
+            border:'1px solid rgba(210,155,60,0.2)',
+            padding:'18px 16px 14px',
+            display:'flex',flexDirection:'column',gap:4,alignItems:'flex-start',
+            position:'relative',
+          }}>
+            <div style={{position:'absolute',top:0,right:0,width:80,height:80,borderRadius:'0 20px 0 60px',background:'rgba(210,155,60,0.07)'}}/>
+            <div style={{fontSize:11,color:T.amber,fontWeight:600,letterSpacing:0.5,textTransform:'uppercase'}}>Diagnose</div>
+            <div style={{fontSize:22,fontWeight:800,color:T.text,lineHeight:1.2,textAlign:'left'}}>Check plant health</div>
+            <div style={{marginTop:8,width:32,height:32,borderRadius:99,background:T.amber,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Quick stats */}
+      <div style={{padding:'20px 20px 0'}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+          {[['12','Scans'],['8','Healthy'],['4','Infected']].map(([n,l])=>(
+            <div key={l} style={{background:T.surface,borderRadius:14,padding:'14px 12px',textAlign:'center',border:`1px solid ${T.border}`}}>
+              <div style={{fontSize:24,fontWeight:800,color:T.text}}>{n}</div>
+              <div style={{fontSize:11,color:T.textMuted,marginTop:2}}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Articles */}
+      <div style={{padding:'24px 20px 0'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+          <div style={{fontSize:12,color:T.textMuted,fontWeight:600,letterSpacing:1,textTransform:'uppercase'}}>Articles for You</div>
+          <span style={{fontSize:12,color:T.green,fontWeight:600}}>See all</span>
+        </div>
+        <div style={{borderRadius:20,overflow:'hidden',border:`1px solid ${T.border}`,position:'relative'}}>
+          <div style={{height:140,background:'linear-gradient(135deg,oklch(25% 0.06 145),oklch(18% 0.04 155))',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <div style={{width:'100%',height:'100%',backgroundImage:'repeating-linear-gradient(45deg,rgba(60,180,90,0.03) 0px,rgba(60,180,90,0.03) 1px,transparent 1px,transparent 8px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4}}>
+              <span style={{fontSize:28}}>🌾</span>
+              <span style={{fontSize:11,color:T.textMuted,fontFamily:'monospace'}}>article hero image</span>
+            </div>
+          </div>
+          <div style={{position:'absolute',top:10,left:12}}><Chip small color='amber'>Intermediate</Chip></div>
+          <div style={{background:T.surface,padding:'14px 16px'}}>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,lineHeight:1.3}}>Collecting Disease Samples in the Philippines</div>
+            <div style={{fontSize:12,color:T.textMuted,marginTop:4}}>AVRDC / WorldVeg · 5 min read</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Screen: Camera ───────────────────────────────────────────
+function CameraScreen({mode='identify',onBack,onResult}) {
+  const [detected,setDetected] = useState(false);
+  useEffect(()=>{const t=setTimeout(()=>setDetected(true),2000);return()=>clearTimeout(t);},[]);
+  return (
+    <div style={{background:'#000',height:'100%',position:'relative',fontFamily:'DM Sans'}}>
+      {/* Viewfinder */}
+      <div style={{position:'absolute',inset:0,background:'linear-gradient(160deg,#0a120a,#000)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{width:'100%',height:'100%',backgroundImage:'repeating-linear-gradient(0deg,rgba(255,255,255,0.015) 0px,rgba(255,255,255,0.015) 1px,transparent 1px,transparent 40px),repeating-linear-gradient(90deg,rgba(255,255,255,0.015) 0px,rgba(255,255,255,0.015) 1px,transparent 1px,transparent 40px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6}}>
+          <span style={{fontSize:40}}>🍃</span>
+          <span style={{fontSize:12,color:'rgba(255,255,255,0.2)',fontFamily:'monospace'}}>camera preview</span>
+        </div>
+      </div>
+
+      {/* Top controls */}
+      <div style={{position:'absolute',top:68,left:0,right:0,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 20px',zIndex:10}}>
+        <button onClick={onBack} style={{width:40,height:40,borderRadius:99,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.12)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M11 6l-6 6 6 6" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </button>
+        <div style={{background:'rgba(0,0,0,0.5)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:99,padding:'8px 16px',display:'flex',alignItems:'center',gap:6}}>
+          <div style={{width:7,height:7,borderRadius:99,background:T.green,boxShadow:`0 0 6px ${T.green}`}}/>
+          <span style={{fontSize:13,color:'white',fontWeight:600}}>{mode==='identify'?'Identify Mode':'Diagnose Mode'}</span>
+        </div>
+        <button style={{width:40,height:40,borderRadius:99,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.12)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="white" strokeWidth="2"/><path d="M12 8v4M12 16h.01" stroke="white" strokeWidth="2.5" strokeLinecap="round"/></svg>
+        </button>
+      </div>
+
+      {/* Scan frame */}
+      <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-52%)',width:260,height:220,zIndex:5}}>
+        {/* corners */}
+        {[[0,0,'0 0 0 0','top','left'],[0,1,'0 0 0 0','top','right'],[1,0,'0 0 0 0','bottom','left'],[1,1,'0 0 0 0','bottom','right']].map((_,i)=>{
+          const corners=[{top:0,left:0,borderTop:`2px solid ${detected?T.green:'white'}`,borderLeft:`2px solid ${detected?T.green:'white'}`,borderRadius:'8px 0 0 0'},{top:0,right:0,borderTop:`2px solid ${detected?T.green:'white'}`,borderRight:`2px solid ${detected?T.green:'white'}`,borderRadius:'0 8px 0 0'},{bottom:0,left:0,borderBottom:`2px solid ${detected?T.green:'white'}`,borderLeft:`2px solid ${detected?T.green:'white'}`,borderRadius:'0 0 0 8px'},{bottom:0,right:0,borderBottom:`2px solid ${detected?T.green:'white'}`,borderRight:`2px solid ${detected?T.green:'white'}`,borderRadius:'0 0 8px 0'}];
+          return <div key={i} style={{position:'absolute',width:28,height:28,...corners[i],transition:'border-color 0.4s'}}/>;
+        })}
+        {detected&&<div style={{position:'absolute',inset:0,border:`1px solid ${T.green}33`,borderRadius:12,boxShadow:`0 0 30px ${T.green}22`}}/>}
+      </div>
+
+      {/* Detection badge */}
+      {detected && (
+        <div style={{position:'absolute',top:'28%',left:'50%',transform:'translateX(-50%)',zIndex:10,textAlign:'center'}}>
+          <div style={{background:'rgba(60,180,90,0.15)',backdropFilter:'blur(12px)',border:`1px solid ${T.green}44`,borderRadius:99,padding:'6px 16px',display:'inline-flex',alignItems:'center',gap:6}}>
+            <div style={{width:7,height:7,borderRadius:99,background:T.green,boxShadow:`0 0 8px ${T.green}`}}/>
+            <span style={{fontSize:12,color:T.green,fontWeight:700,letterSpacing:1}}>LEAF DETECTED</span>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom tip */}
+      <div style={{position:'absolute',bottom:130,left:20,right:20,zIndex:10}}>
+        <div style={{background:'rgba(10,10,10,0.75)',backdropFilter:'blur(16px)',borderRadius:16,padding:'12px 16px',border:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:18}}>🍅</span>
+          <div>
+            <div style={{fontSize:13,color:'white',fontWeight:600}}>Point at a tomato leaf</div>
+            <div style={{fontSize:11,color:'rgba(255,255,255,0.45)'}}>Hold steady for best results</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom controls */}
+      <div style={{position:'absolute',bottom:40,left:0,right:0,display:'flex',alignItems:'center',justifyContent:'space-around',zIndex:10,padding:'0 32px'}}>
+        <button style={{width:46,height:46,borderRadius:14,background:'rgba(255,255,255,0.08)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.1)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1" stroke="white" strokeWidth="2"/><rect x="14" y="3" width="7" height="7" rx="1" stroke="white" strokeWidth="2"/><rect x="3" y="14" width="7" height="7" rx="1" stroke="white" strokeWidth="2"/><rect x="14" y="14" width="7" height="7" rx="1" stroke="white" strokeWidth="2"/></svg>
+        </button>
+        <button onClick={()=>onResult(mode)} style={{
+          width:70,height:70,borderRadius:99,border:'3px solid rgba(255,255,255,0.2)',
+          background:`radial-gradient(circle, oklch(68% 0.22 145), oklch(52% 0.2 155))`,
+          boxShadow:`0 0 0 6px rgba(60,180,90,0.12), 0 6px 24px oklch(65% 0.2 145 / 0.4)`,
+          cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
+        }}>
+          <div style={{width:26,height:26,borderRadius:99,background:'white'}}/>
+        </button>
+        <button style={{width:46,height:46,borderRadius:14,background:'rgba(255,255,255,0.08)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.1)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M13 10H3M21 6H3M21 14H11M21 18H3" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Screen: Identify Results ─────────────────────────────────
+function IdentifyResultsScreen({onBack, onDiagnose}) {
+  const [tab,setTab]=useState('summary');
+  return (
+    <div style={{background:T.bg,height:'100%',overflowY:'auto',fontFamily:'DM Sans',paddingBottom:40}}>
+      {/* Hero */}
+      <div style={{position:'relative',height:280}}>
+        <div style={{position:'absolute',inset:0,background:'linear-gradient(135deg,oklch(18% 0.05 145),oklch(10% 0.03 155))',display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div style={{width:'100%',height:'100%',backgroundImage:'repeating-linear-gradient(45deg,rgba(60,180,90,0.03) 0px,rgba(60,180,90,0.03) 1px,transparent 1px,transparent 10px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6}}>
+            <span style={{fontSize:50}}>🍃</span>
+            <span style={{fontSize:11,color:'rgba(255,255,255,0.2)',fontFamily:'monospace'}}>scanned leaf image</span>
+          </div>
+        </div>
+        {/* Gradient overlay */}
+        <div style={{position:'absolute',bottom:0,left:0,right:0,height:100,background:`linear-gradient(transparent, ${T.bg})`}}/>
+        {/* Back btn */}
+        <button onClick={onBack} style={{position:'absolute',top:68,left:16,width:40,height:40,borderRadius:99,background:'rgba(0,0,0,0.4)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.12)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',zIndex:10}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M11 6l-6 6 6 6" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </button>
+        {/* Detection pill */}
+        <div style={{position:'absolute',bottom:60,left:'50%',transform:'translateX(-50%)',whiteSpace:'nowrap',zIndex:5}}>
+          <div style={{background:T.red,borderRadius:99,padding:'7px 18px',display:'inline-flex',alignItems:'center',gap:6,boxShadow:'0 4px 16px rgba(220,70,70,0.4)'}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M12 2L22 20H2z"/><path d="M12 9v5M12 16v1" stroke="white" strokeWidth="2.5" strokeLinecap="round"/></svg>
+            <span style={{fontSize:12,fontWeight:800,color:'white',letterSpacing:1}}>LEAF MOLD DETECTED</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:'flex',margin:'0 20px 0',background:T.surface,borderRadius:14,padding:4}}>
+        {['summary','symptoms','compare'].map(t=>(
+          <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:'9px 0',borderRadius:11,border:'none',cursor:'pointer',background:tab===t?T.surfaceUp:'transparent',color:tab===t?T.text:T.textMuted,fontSize:13,fontWeight:tab===t?600:400,fontFamily:'DM Sans',transition:'all 0.2s',textTransform:'capitalize'}}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab==='summary'&&(
+        <div style={{padding:'20px 20px 0'}}>
+          {/* Disease name */}
+          <div style={{background:T.surface,borderRadius:20,padding:20,border:`1px solid ${T.border}`,marginBottom:14}}>
+            <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:6}}>Leaf Mold</div>
+            <div style={{fontSize:13,color:T.textSub,marginBottom:16,lineHeight:1.5}}>A fungal disease caused by <em>Passalora fulva</em>, common in high humidity environments and greenhouses.</div>
+            {/* Confidence bar */}
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+              <div style={{fontSize:12,color:T.textMuted,width:80}}>Confidence</div>
+              <div style={{flex:1,height:6,borderRadius:99,background:'rgba(255,255,255,0.06)',overflow:'hidden'}}>
+                <div style={{width:'97.5%',height:'100%',borderRadius:99,background:`linear-gradient(90deg,${T.green},oklch(72% 0.18 120))`,boxShadow:`0 0 8px ${T.green}`}}/>
+              </div>
+              <div style={{fontSize:13,fontWeight:700,color:T.green,width:40,textAlign:'right'}}>97.5%</div>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <Chip color='green'>High Confidence</Chip>
+              <Chip color='gray'>Fungal</Chip>
+            </div>
+          </div>
+
+          {/* Stats row */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+            {[['Pathogen','P. fulva'],['Severity','Moderate'],['Spread','Airborne','amber'],['Treatment','Fungicide','amber']].map(([k,v,c])=>(
+              <div key={k} style={{background:T.surface,borderRadius:14,padding:'14px 14px',border:`1px solid ${T.border}`}}>
+                <div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>{k}</div>
+                <div style={{fontSize:15,fontWeight:700,color:c==='amber'?T.amber:T.text}}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={onDiagnose} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',cursor:'pointer',background:`linear-gradient(135deg,${T.green},oklch(55% 0.2 155))`,color:'white',fontSize:15,fontWeight:700,fontFamily:'DM Sans',boxShadow:`0 4px 20px oklch(65% 0.2 145 / 0.3)`}}>
+            Get Full Treatment Guide →
+          </button>
+        </div>
+      )}
+
+      {tab==='symptoms'&&(
+        <div style={{padding:'20px 20px 0'}}>
+          <div style={{background:T.surface,borderRadius:20,padding:20,border:`1px solid ${T.border}`}}>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:10}}>Visual Symptoms</div>
+            {[['Upper leaf surface','Pale green or yellow spots appear, initially small and angular.'],['Underside','Olive-green to brown velvety mold (sporulation).'],['Progression','Spots enlarge, leaves turn yellow then brown and drop.']].map(([t,d])=>(
+              <div key={t} style={{marginBottom:14}}>
+                <div style={{fontSize:13,fontWeight:600,color:T.green,marginBottom:4}}>{t}</div>
+                <div style={{fontSize:13,color:T.textSub,lineHeight:1.6}}>{d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab==='compare'&&(
+        <div style={{padding:'20px 20px 0'}}>
+          <div style={{fontSize:13,color:T.textMuted,marginBottom:12}}>Visually similar confirmed cases</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            {['Case #1','Case #2','Case #3','Case #4'].map(c=>(
+              <div key={c} style={{borderRadius:16,overflow:'hidden',border:`1px solid ${T.border}`}}>
+                <div style={{height:90,background:'linear-gradient(135deg,oklch(22% 0.06 145),oklch(16% 0.04 155))',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <span style={{fontSize:22}}>🍃</span>
+                </div>
+                <div style={{background:T.surface,padding:'8px 10px'}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.text}}>{c}</div>
+                  <div style={{fontSize:10,color:T.textMuted}}>Leaf Mold · 96%+</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Screen: Diagnosis Results ────────────────────────────────
+function DiagnosisScreen({onBack}) {
+  const remedies=['Improve ventilation and air circulation around plants.','Reduce humidity; avoid overhead watering that wets leaves.','Apply fungicides such as chlorothalonil or copper-based products.','Remove and destroy infected leaves to reduce spread.','Use resistant tomato cultivars in future plantings.'];
+  const [reminder,setReminder]=useState(false);
+  return (
+    <div style={{background:T.bg,height:'100%',overflowY:'auto',fontFamily:'DM Sans',paddingBottom:40}}>
+      {/* Nav */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'72px 20px 16px'}}>
+        <button onClick={onBack} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'8px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M11 6l-6 6 6 6" stroke={T.textSub} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <span style={{fontSize:13,color:T.textSub,fontFamily:'DM Sans'}}>Back</span>
+        </button>
+        <div style={{fontSize:16,fontWeight:700,color:T.text}}>Treatment Guide</div>
+        <div style={{background:`${T.green}22`,border:`1px solid ${T.green}44`,borderRadius:8,padding:'6px 10px',fontSize:12,fontWeight:600,color:T.green}}>EN</div>
+      </div>
+
+      {/* Disease banner */}
+      <div style={{margin:'0 20px 16px',background:`linear-gradient(135deg, oklch(22% 0.08 145), oklch(16% 0.05 155))`,borderRadius:20,padding:20,border:`1px solid rgba(60,180,90,0.2)`}}>
+        <div style={{display:'flex',alignItems:'flex-start',gap:14}}>
+          <div style={{width:50,height:50,borderRadius:14,background:'rgba(60,180,90,0.15)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <span style={{fontSize:24}}>🦠</span>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:T.green,fontWeight:600,letterSpacing:0.5,textTransform:'uppercase',marginBottom:4}}>Causal Organism</div>
+            <div style={{fontSize:18,fontWeight:800,color:T.text}}>Leaf Mold</div>
+            <div style={{fontSize:13,color:T.textSub,marginTop:2,fontStyle:'italic'}}>Passalora fulva (formerly Cladosporium fulvum)</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Info cards */}
+      <div style={{padding:'0 20px',display:'flex',flexDirection:'column',gap:10,marginBottom:16}}>
+        {[
+          {icon:'⚡',label:'Cause',text:'High humidity above 85% and poor ventilation, especially in greenhouses or tunnels.',color:T.amber},
+          {icon:'👁',label:'Description',text:'Yellow spots appear on upper leaf surfaces while olive-green mold develops on the undersides.',color:T.green},
+        ].map(({icon,label,text,color})=>(
+          <div key={label} style={{background:T.surface,borderRadius:18,padding:'16px 18px',border:`1px solid ${T.border}`,display:'flex',gap:14}}>
+            <div style={{width:36,height:36,borderRadius:10,background:`${color}18`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18}}>{icon}</div>
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color,letterSpacing:0.3,textTransform:'uppercase',marginBottom:5}}>{label}</div>
+              <div style={{fontSize:13,color:T.textSub,lineHeight:1.6}}>{text}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Remedies */}
+      <div style={{padding:'0 20px',marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12,display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:6,height:6,borderRadius:99,background:T.green}}/>
+          Remedies
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {remedies.map((r,i)=>(
+            <div key={i} style={{background:T.surface,borderRadius:16,padding:'14px 16px',border:`1px solid ${T.border}`,display:'flex',alignItems:'flex-start',gap:12}}>
+              <div style={{width:26,height:26,borderRadius:99,background:`${T.green}20`,border:`1px solid ${T.green}40`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                <span style={{fontSize:12,fontWeight:800,color:T.green}}>{i+1}</span>
+              </div>
+              <div style={{fontSize:13,color:T.textSub,lineHeight:1.5,paddingTop:3}}>{r}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Reminder card */}
+      <div style={{margin:'0 20px',background:T.surface,borderRadius:20,padding:18,border:`1px solid ${T.border}`,marginBottom:12}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+          <span style={{fontSize:18}}>🔔</span>
+          <div style={{fontSize:15,fontWeight:700,color:T.text}}>Set a care reminder</div>
+        </div>
+        <div style={{fontSize:13,color:T.textSub,lineHeight:1.5,marginBottom:14}}>Add a reminder for watering, fertilizing, or checking the soil while you treat your plant.</div>
+        <button onClick={()=>setReminder(!reminder)} style={{width:'100%',padding:'13px',borderRadius:12,border:'none',cursor:'pointer',background:reminder?T.surfaceUp:`linear-gradient(135deg,${T.green},oklch(55% 0.2 155))`,color:reminder?T.green:'white',fontSize:14,fontWeight:700,fontFamily:'DM Sans',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+          {reminder?'✓ Reminder Set':'🔔 Add Reminder'}
+        </button>
+      </div>
+
+      {/* Ask AI */}
+      <div style={{margin:'0 20px',background:T.surface,borderRadius:20,padding:18,border:`1px solid rgba(60,180,90,0.15)`}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+          <span style={{fontSize:18}}>💬</span>
+          <div style={{fontSize:15,fontWeight:700,color:T.text}}>Have a question?</div>
+        </div>
+        <div style={{fontSize:13,color:T.textSub,lineHeight:1.5,marginBottom:14}}>Ask Tomo AI about Leaf Mold, treatment steps, and what to do next.</div>
+        <button style={{width:'100%',padding:'13px',borderRadius:12,border:`1px solid ${T.green}44`,cursor:'pointer',background:`${T.green}12`,color:T.green,fontSize:14,fontWeight:700,fontFamily:'DM Sans'}}>
+          Ask Plant AI →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Screen: History ──────────────────────────────────────────
+const historyData = [
+  {id:1,name:'Leaf Mold #5',type:'Diagnose',status:'infected',conf:'High',date:'Apr 16, 12:37 PM'},
+  {id:2,name:'Leaf Mold #4',type:'Identify',status:'infected',conf:'High',date:'Apr 16, 12:30 PM'},
+  {id:3,name:'Early Blight',type:'Identify',status:'infected',conf:'Low',date:'Apr 16, 10:12 AM'},
+  {id:4,name:'Leaf Mold #3',type:'Identify',status:'infected',conf:'High',date:'Apr 16, 10:11 AM'},
+  {id:5,name:'Healthy Leaf',type:'Identify',status:'healthy',conf:'High',date:'Apr 16, 10:11 AM'},
+];
+
+function HistoryScreen({onViewResult}) {
+  const [tab,setTab]=useState('infected');
+  const [sheet,setSheet]=useState(null);
+  const filtered=historyData.filter(h=>h.status===tab);
+  return (
+    <div style={{background:T.bg,height:'100%',fontFamily:'DM Sans',position:'relative',overflowY:'auto',paddingBottom:100}}>
+      {/* Header */}
+      <div style={{padding:'68px 20px 16px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{fontSize:26,fontWeight:800,color:T.text}}>My Plant History</div>
+        <button style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:T.green,fontWeight:600,fontFamily:'DM Sans'}}>Select</button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:'flex',margin:'0 20px 16px',background:T.surface,borderRadius:14,padding:4}}>
+        {['healthy','infected'].map(t=>(
+          <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:'10px 0',borderRadius:11,border:'none',cursor:'pointer',background:tab===t?T.surfaceUp:'transparent',color:tab===t?T.text:T.textMuted,fontSize:14,fontWeight:tab===t?700:400,fontFamily:'DM Sans',transition:'all 0.2s',textTransform:'capitalize'}}>
+            {t.charAt(0).toUpperCase()+t.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* List */}
+      <div style={{padding:'0 20px',display:'flex',flexDirection:'column',gap:10}}>
+        {filtered.map(item=>(
+          <div key={item.id} style={{background:T.surface,borderRadius:18,padding:'14px 16px',border:`1px solid ${T.border}`,display:'flex',flexDirection:'column',gap:10}}>
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              {/* Thumbnail */}
+              <div style={{width:52,height:52,borderRadius:12,background:'linear-gradient(135deg,oklch(22% 0.06 145),oklch(16% 0.04 155))',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                <span style={{fontSize:20}}>{item.status==='healthy'?'🌿':'🍃'}</span>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>{item.name}</div>
+                  {item.status==='infected'?
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill={T.red}><path d="M12 2L22 20H2z"/></svg>:
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill={T.green}><path d="M20 6L9 17l-5-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/><circle cx="12" cy="12" r="10" fill={T.green}/><path d="M20 6L9 17l-5-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  }
+                </div>
+                <div style={{fontSize:12,color:T.textMuted,marginTop:2}}>{item.date}</div>
+              </div>
+              <button onClick={()=>setSheet(item)} style={{background:'none',border:'none',cursor:'pointer',padding:'4px'}}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="5" r="2" fill={T.textMuted}/><circle cx="12" cy="12" r="2" fill={T.textMuted}/><circle cx="12" cy="19" r="2" fill={T.textMuted}/></svg>
+              </button>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <Chip small color={item.type==='Diagnose'?'amber':'green'}>{item.type}</Chip>
+              <Chip small color={item.conf==='High'?'green':'red'}>{item.conf} Confidence</Chip>
+              <span style={{marginLeft:'auto',fontSize:12,color:T.green,fontWeight:600,cursor:'pointer'}} onClick={()=>onViewResult()}>View Result →</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Action sheet */}
+      {sheet&&(
+        <div style={{position:'fixed',inset:0,zIndex:200}} onClick={()=>setSheet(null)}>
+          <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(4px)'}}/>
+          <div style={{position:'absolute',bottom:0,left:0,right:0,background:T.surface,borderRadius:'24px 24px 0 0',padding:'8px 0 40px',border:'1px solid rgba(255,255,255,0.08)'}} onClick={e=>e.stopPropagation()}>
+            <div style={{width:36,height:4,borderRadius:99,background:'rgba(255,255,255,0.2)',margin:'8px auto 20px'}}/>
+            <div style={{fontSize:14,fontWeight:700,color:T.text,textAlign:'center',marginBottom:16,padding:'0 20px'}}>{sheet.name}</div>
+            {[
+              {icon:'👁',label:'View Result',action:()=>{setSheet(null);onViewResult();},color:T.text},
+              {icon:'🗑',label:'Delete This Scan',color:T.red,action:()=>setSheet(null)},
+              {icon:'✕',label:'Cancel',color:T.textMuted,action:()=>setSheet(null)},
+            ].map(({icon,label,color,action})=>(
+              <button key={label} onClick={action} style={{display:'flex',alignItems:'center',gap:14,width:'100%',padding:'16px 28px',background:'none',border:'none',cursor:'pointer',borderTop:'1px solid rgba(255,255,255,0.05)'}}>
+                <span style={{fontSize:18,width:24,textAlign:'center'}}>{icon}</span>
+                <span style={{fontSize:16,color,fontFamily:'DM Sans',fontWeight:label==='Cancel'?400:500}}>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Screen: Chat ─────────────────────────────────────────────
+function ChatScreen() {
+  const suggestions=['Why are my tomato leaves showing white trails?','How do I treat Early Blight?','What does Leaf Mold look like?','My confidence score was low — should I worry?'];
+  const [msgs,setMsgs]=useState([]);
+  const [input,setInput]=useState('');
+  const [loading,setLoading]=useState(false);
+  const [started,setStarted]=useState(false);
+
+  const send=(text)=>{
+    if(!text.trim()) return;
+    const q=text.trim();
+    setMsgs(m=>[...m,{role:'user',text:q}]);
+    setInput('');
+    setStarted(true);
+    setLoading(true);
+    window.claude.complete(`You are Tomo, a plant health AI assistant specializing in tomato diseases. Answer concisely and helpfully in 2-3 sentences. Question: ${q}`)
+      .then(r=>{setMsgs(m=>[...m,{role:'ai',text:r}]);setLoading(false);})
+      .catch(()=>{setMsgs(m=>[...m,{role:'ai',text:'Sorry, I had trouble answering that. Please try again.'}]);setLoading(false);});
+  };
+
+  return (
+    <div style={{background:T.bg,height:'100%',display:'flex',flexDirection:'column',fontFamily:'DM Sans'}}>
+      {/* Header */}
+      <div style={{padding:'68px 20px 16px',background:`linear-gradient(180deg,oklch(12% 0.04 155),${T.bg})`,flexShrink:0}}>
+        <div style={{fontSize:20,fontWeight:800,color:T.text}}>Tomo <span style={{fontSize:18}}>🌿</span></div>
+        <div style={{fontSize:13,color:T.textMuted}}>Plant Health Assistant</div>
+      </div>
+
+      {/* Messages */}
+      <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+        {!started&&(
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'20px 0 24px',gap:16}}>
+            <div style={{width:64,height:64,borderRadius:99,background:`linear-gradient(135deg,oklch(35% 0.12 145),oklch(25% 0.08 155))`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 0 30px oklch(65% 0.2 145 / 0.2)`}}>
+              <span style={{fontSize:28}}>🌿</span>
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:18,fontWeight:800,color:T.text}}>Hi! I'm Tomo 🌱</div>
+              <div style={{fontSize:13,color:T.textMuted,marginTop:4,lineHeight:1.5,maxWidth:240}}>Ask me anything about your tomato plants, recent scans, or how to treat leaf diseases.</div>
+            </div>
+            <div style={{width:'100%'}}>
+              <div style={{fontSize:11,color:T.textMuted,marginBottom:8,textAlign:'center',letterSpacing:0.5}}>SUGGESTED QUESTIONS</div>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {suggestions.map(s=>(
+                  <button key={s} onClick={()=>send(s)} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,padding:'12px 16px',cursor:'pointer',textAlign:'left',fontSize:13,color:T.textSub,fontFamily:'DM Sans',lineHeight:1.4}}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        {msgs.map((m,i)=>(
+          <div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start',marginBottom:10}}>
+            {m.role==='ai'&&<div style={{width:28,height:28,borderRadius:99,background:`linear-gradient(135deg,oklch(35% 0.12 145),oklch(25% 0.08 155))`,display:'flex',alignItems:'center',justifyContent:'center',marginRight:8,flexShrink:0,marginTop:4}}>
+              <span style={{fontSize:13}}>🌿</span>
+            </div>}
+            <div style={{maxWidth:'75%',padding:'12px 16px',borderRadius:m.role==='user'?'18px 18px 4px 18px':'18px 18px 18px 4px',background:m.role==='user'?T.green:T.surface,border:m.role==='ai'?`1px solid ${T.border}`:'none'}}>
+              <div style={{fontSize:14,color:m.role==='user'?'white':T.text,lineHeight:1.5}}>{m.text}</div>
+            </div>
+          </div>
+        ))}
+        {loading&&(
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+            <div style={{width:28,height:28,borderRadius:99,background:`linear-gradient(135deg,oklch(35% 0.12 145),oklch(25% 0.08 155))`,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <span style={{fontSize:13}}>🌿</span>
+            </div>
+            <div style={{background:T.surface,borderRadius:'18px 18px 18px 4px',padding:'12px 16px',border:`1px solid ${T.border}`}}>
+              <div style={{display:'flex',gap:4}}>
+                {[0,1,2].map(i=><div key={i} style={{width:6,height:6,borderRadius:99,background:T.textMuted,animation:`pulse 1.2s ease ${i*0.2}s infinite`}}/>)}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div style={{padding:'12px 16px 20px',flexShrink:0,background:T.bg,borderTop:`1px solid ${T.border}`}}>
+        <div style={{display:'flex',gap:10,alignItems:'center'}}>
+          <div style={{flex:1,background:T.surface,borderRadius:14,border:`1px solid ${T.border}`,display:'flex',alignItems:'center',padding:'2px 4px 2px 16px',gap:8}}>
+            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send(input)} placeholder="Type your question…" style={{flex:1,background:'none',border:'none',outline:'none',color:T.text,fontSize:14,fontFamily:'DM Sans',padding:'10px 0'}}/>
+          </div>
+          <button onClick={()=>send(input)} style={{width:44,height:44,borderRadius:12,border:'none',cursor:'pointer',background:T.green,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 2px 12px oklch(65% 0.2 145 / 0.35)`}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Screen: More ─────────────────────────────────────────────
+function MoreScreen() {
+  const [contrib,setContrib]=useState(true);
+  return (
+    <div style={{background:T.bg,height:'100%',overflowY:'auto',fontFamily:'DM Sans',paddingBottom:100}}>
+      <div style={{padding:'68px 20px 20px',fontSize:26,fontWeight:800,color:T.text}}>More</div>
+
+      {/* Profile */}
+      <div style={{margin:'0 20px 16px',background:`linear-gradient(135deg,oklch(20% 0.06 145),oklch(15% 0.04 155))`,borderRadius:20,padding:18,border:'1px solid rgba(60,180,90,0.15)',display:'flex',alignItems:'center',gap:14}}>
+        <div style={{width:50,height:50,borderRadius:99,background:`linear-gradient(135deg,${T.green},oklch(55% 0.2 155))`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,fontWeight:800,color:'white'}}>M</div>
+        <div>
+          <div style={{fontSize:17,fontWeight:700,color:T.text}}>MJ</div>
+          <div style={{fontSize:13,color:T.textSub}}>mjskleepagarigan@gmail.com</div>
+        </div>
+        <button style={{marginLeft:'auto',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'6px 12px',cursor:'pointer',fontSize:12,color:T.textSub,fontFamily:'DM Sans'}}>Edit</button>
+      </div>
+
+      {/* Contributions */}
+      <div style={{margin:'0 20px 16px',background:T.surface,borderRadius:20,padding:18,border:`1px solid ${T.border}`}}>
+        <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:14}}>Your Contributions to TomoLeafNet</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+          {[['1','Images Contributed'],['0','Approved'],['1','Pending Review'],['0','Used in Training']].map(([n,l])=>(
+            <div key={l} style={{background:T.surfaceUp,borderRadius:12,padding:'12px 14px'}}>
+              <div style={{fontSize:22,fontWeight:800,color:n!=='0'?T.green:T.textMuted}}>{n}</div>
+              <div style={{fontSize:11,color:T.textMuted,marginTop:2,lineHeight:1.3}}>{l}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',paddingTop:12,borderTop:`1px solid ${T.border}`}}>
+          <div>
+            <div style={{fontSize:14,fontWeight:600,color:T.text}}>Allow Future Contributions</div>
+            <div style={{fontSize:11,color:T.textMuted,marginTop:2}}>Ask before donating high-quality scans.</div>
+          </div>
+          <div onClick={()=>setContrib(!contrib)} style={{width:48,height:28,borderRadius:99,background:contrib?T.green:'rgba(255,255,255,0.1)',cursor:'pointer',position:'relative',transition:'background 0.2s'}}>
+            <div style={{position:'absolute',top:3,left:contrib?22:3,width:22,height:22,borderRadius:99,background:'white',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
+          </div>
+        </div>
+        <button style={{display:'flex',alignItems:'center',gap:10,marginTop:12,background:'none',border:'none',cursor:'pointer',padding:'8px 0'}}>
+          <span style={{fontSize:16}}>🗑</span>
+          <span style={{fontSize:14,color:T.red,fontFamily:'DM Sans',fontWeight:500}}>Request Image Deletion</span>
+        </button>
+      </div>
+
+      {/* Appearance */}
+      <div style={{margin:'0 20px 16px',background:T.surface,borderRadius:20,padding:18,border:`1px solid ${T.border}`}}>
+        <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:14}}>Appearance</div>
+        <div style={{fontSize:13,color:T.textMuted,marginBottom:10}}>Theme</div>
+        <div style={{display:'flex',background:T.bg,borderRadius:12,padding:4,gap:4}}>
+          {[['📱','System'],['☀️','Light'],['🌙','Dark']].map(([ic,lbl],i)=>(
+            <div key={lbl} style={{flex:1,padding:'8px 0',borderRadius:9,background:i===2?T.surfaceUp:'transparent',textAlign:'center',cursor:'pointer'}}>
+              <div style={{fontSize:14}}>{ic}</div>
+              <div style={{fontSize:11,color:i===2?T.text:T.textMuted,marginTop:2}}>{lbl}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Sign out */}
+      <div style={{margin:'0 20px'}}>
+        <button style={{width:'100%',padding:'14px',borderRadius:14,border:`1px solid rgba(220,70,70,0.2)`,cursor:'pointer',background:'rgba(220,70,70,0.06)',color:T.red,fontSize:14,fontWeight:600,fontFamily:'DM Sans'}}>Sign Out</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Scan type modal ──────────────────────────────────────────
+function ScanModal({onClose,onChoose}) {
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:300}} onClick={onClose}>
+      <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)'}}/>
+      <div style={{position:'absolute',bottom:0,left:0,right:0,background:T.surface,borderRadius:'24px 24px 0 0',padding:'20px 20px 48px',border:'1px solid rgba(255,255,255,0.08)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:36,height:4,borderRadius:99,background:'rgba(255,255,255,0.2)',margin:'0 auto 20px'}}/>
+        <div style={{fontSize:18,fontWeight:800,color:T.text,textAlign:'center',marginBottom:20}}>Choose Scan Type</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          {[
+            {id:'identify',icon:'🔍',label:'Identify',sub:'Detect disease',color:T.green,accent:'rgba(60,180,90,0.15)'},
+            {id:'diagnose',icon:'⚕️',label:'Diagnose',sub:'Get treatment',color:T.amber,accent:'rgba(210,155,60,0.15)'},
+          ].map(({id,icon,label,sub,color,accent})=>(
+            <button key={id} onClick={()=>{onClose();onChoose(id);}} style={{background:accent,border:`1px solid ${color}33`,borderRadius:18,padding:'22px 16px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+              <span style={{fontSize:28}}>{icon}</span>
+              <div style={{fontSize:16,fontWeight:800,color:T.text,fontFamily:'DM Sans'}}>{label}</div>
+              <div style={{fontSize:12,color:T.textMuted,fontFamily:'DM Sans'}}>{sub}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Root App ─────────────────────────────────────────────────
+function App() {
+  const [tab,setTab]=useState('home');
+  const [screen,setScreen]=useState('home'); // current full screen
+  const [cameraMode,setCameraMode]=useState('identify');
+  const [showScanModal,setShowScanModal]=useState(false);
+  const [tweaksVisible,setTweaksVisible]=useState(false);
+
+  const navigate=(to,mode)=>{
+    if(mode) setCameraMode(mode);
+    setScreen(to);
+  };
+
+  // Tweaks protocol
+  useEffect(()=>{
+    const handler=({data})=>{
+      if(data?.type==='__activate_edit_mode') setTweaksVisible(true);
+      if(data?.type==='__deactivate_edit_mode') setTweaksVisible(false);
+    };
+    window.addEventListener('message',handler);
+    window.parent.postMessage({type:'__edit_mode_available'},'*');
+    return()=>window.removeEventListener('message',handler);
+  },[]);
+
+  const renderScreen=()=>{
+    if(screen==='camera') return <CameraScreen mode={cameraMode} onBack={()=>setScreen('home')} onResult={(m)=>navigate(m==='identify'?'identify':'diagnosis')}/>;
+    if(screen==='identify') return <IdentifyResultsScreen onBack={()=>setScreen('camera')} onDiagnose={()=>setScreen('diagnosis')}/>;
+    if(screen==='diagnosis') return <DiagnosisScreen onBack={()=>setScreen('identify')}/>;
+    if(tab==='home') return <HomeScreen onNav={navigate}/>;
+    if(tab==='chat') return <ChatScreen/>;
+    if(tab==='history') return <HistoryScreen onViewResult={()=>setScreen('identify')}/>;
+    if(tab==='more') return <MoreScreen/>;
+  };
+
+  const showTabBar = !['camera'].includes(screen);
+  const isSubScreen = ['identify','diagnosis'].includes(screen);
+
+  return (
+    <>
+      <IOSDevice width={390} height={844} dark={true}>
+        <div style={{height:'100%',position:'relative',overflow:'hidden'}}>
+          <div style={{height:'100%',overflowY:'hidden'}}>
+            {renderScreen()}
+          </div>
+          {showTabBar&&!isSubScreen&&(
+            <TabBar
+              active={tab}
+              onTab={t=>{setTab(t);setScreen('home_equiv');}}
+              onScan={()=>setShowScanModal(true)}
+            />
+          )}
+        </div>
+      </IOSDevice>
+
+      {showScanModal&&<ScanModal onClose={()=>setShowScanModal(false)} onChoose={mode=>{navigate('camera',mode);}}/>}
+
+      {/* Tweaks panel */}
+      <div id="tweaks-panel" style={{display:tweaksVisible?'block':'none',position:'fixed',bottom:24,right:24,background:'rgba(14,20,16,0.97)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:20,padding:20,zIndex:9999,width:240,backdropFilter:'blur(20px)',color:'#fff',fontFamily:'DM Sans'}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.text}}>Tweaks</div>
+        <div style={{fontSize:12,color:T.textMuted,marginBottom:6}}>Active Screen</div>
+        <select onChange={e=>setScreen(e.target.value)} value={screen} style={{width:'100%',marginBottom:14,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,color:'#fff',padding:'6px 10px',fontSize:13,fontFamily:'DM Sans'}}>
+          <option value="home_equiv">Home</option>
+          <option value="camera">Camera</option>
+          <option value="identify">Identify Results</option>
+          <option value="diagnosis">Diagnosis</option>
+        </select>
+        <div style={{fontSize:12,color:T.textMuted,marginBottom:6}}>Camera Mode</div>
+        <select onChange={e=>setCameraMode(e.target.value)} value={cameraMode} style={{width:'100%',marginBottom:14,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,color:'#fff',padding:'6px 10px',fontSize:13,fontFamily:'DM Sans'}}>
+          <option value="identify">Identify</option>
+          <option value="diagnose">Diagnose</option>
+        </select>
+      </div>
+
+      <style>{`
+        @keyframes pulse {
+          0%,100%{opacity:0.3;transform:scale(0.8)}
+          50%{opacity:1;transform:scale(1.1)}
+        }
+        * { -webkit-tap-highlight-color: transparent; }
+        button { -webkit-tap-highlight-color: transparent; }
+      `}</style>
+    </>
+  );
+}
+
+// Fix tab switching
+const OrigApp = App;
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+<div id="root"></div>
+
+
+</body></html>

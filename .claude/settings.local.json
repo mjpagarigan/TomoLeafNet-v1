@@ -78,7 +78,10 @@
       "Bash(mv c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/Videos/tomato_planting_basics.mp4 c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/Videos/tomato_disease_types.mp4 c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/Videos/tomato_spray_treatment.mp4 c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/Videos/tomato_plastic_bottle.mp4 c:/Users/iamha/OneDrive/Documents/GitHub/TomoLeafNet-v1/MOBILE_APP/assets/videos/)",
       "Bash(git lfs:*)",
       "WebFetch(domain:youtu.be)",
-      "WebFetch(domain:www.youtube.com)"
+      "WebFetch(domain:www.youtube.com)",
+      "WebFetch(domain:api.anthropic.com)",
+      "WebFetch(domain:claude.ai)",
+      "Bash(python -c ' *)"
     ]
   }
 }
