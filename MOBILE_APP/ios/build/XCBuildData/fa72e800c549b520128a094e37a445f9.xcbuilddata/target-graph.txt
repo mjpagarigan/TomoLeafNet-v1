@@ -1,0 +1,6 @@
+Target dependency graph (3 targets)
+Target 'permission_handler_apple' in project 'Pods'
+➜ Explicit dependency on target 'Flutter' in project 'Pods'
+➜ Explicit dependency on target 'permission_handler_apple-permission_handler_apple_privacy' in project 'Pods'
+Target 'permission_handler_apple-permission_handler_apple_privacy' in project 'Pods' (no dependencies)
+Target 'Flutter' in project 'Pods' (no dependencies)
