@@ -1,19 +1,19 @@
 """
-3_evaluate_metrics.py - Evaluation on Unseen Field Test Set
+3_evaluate_metrics_v5.py - Evaluation on Unseen Field Test Set (v5 Model)
 
-Loads the final fine-tuned model and evaluates on the held-out test split
+Loads the v5 fine-tuned model and evaluates on the held-out test split
 (real field images only, no synthetic augmentation).
 
 Prerequisites:
     - Run 0_augment_field_dataset.py first (creates DATA-SPLIT/target_field/test/)
-    - Run 2_train_phase2.py first (creates MODEL/tomoleafnet_v4_final.keras)
+    - Run 2_train_phase2_v5.py first (creates MODEL/tomoleafnet_v5_final.keras)
 
 Outputs:
-    - RESULTS/Confusion_Matrix.png
+    - RESULTS/Confusion_Matrix_v5.png
     - Classification report + per-class accuracy printed to console
 
 Usage:
-    python 3_evaluate_metrics.py
+    python 3_evaluate_metrics_v5.py
 """
 
 import os
@@ -27,11 +27,11 @@ from sklearn.metrics import classification_report, confusion_matrix
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEST_DIR = os.path.join(BASE_DIR, "DATA-SPLIT", "target_field", "test")
-MODEL_PATH = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v4_final.keras")
+MODEL_PATH = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v5_final.keras")
 MODEL_PATH_H5 = MODEL_PATH.replace(".keras", ".h5")
-TFLITE_PATH = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v4.tflite")
+TFLITE_PATH = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v5.tflite")
 RESULTS_DIR = os.path.join(BASE_DIR, "RESULTS")
-CM_PATH = os.path.join(RESULTS_DIR, "Confusion_Matrix.png")
+CM_PATH = os.path.join(RESULTS_DIR, "Confusion_Matrix_v5.png")
 
 IMG_SIZE = 224
 BATCH_SIZE = 32
@@ -103,7 +103,7 @@ def build_dataset(data_dir, batch_size):
 def evaluate():
     """Load model and evaluate on the unseen test set."""
     print("=" * 60)
-    print("  TomoLeafNet v4 - Evaluation on Unseen Test Set")
+    print("  TomoLeafNet v5 - Evaluation on Unseen Test Set")
     print("=" * 60)
 
     print(f"\nTest data: {TEST_DIR}")
@@ -170,7 +170,7 @@ def evaluate():
     )
     ax.set_xlabel("Predicted", fontsize=12)
     ax.set_ylabel("Actual", fontsize=12)
-    ax.set_title("TomoLeafNet v4 - Confusion Matrix (Field Test Set)", fontsize=14)
+    ax.set_title("TomoLeafNet v5 - Confusion Matrix (Field Test Set)", fontsize=14)
     plt.xticks(rotation=45, ha="right")
     plt.yticks(rotation=0)
     plt.tight_layout()
@@ -183,11 +183,11 @@ def compare_tflite():
     """Compare Keras vs TFLite model accuracy on the test set."""
     if not os.path.exists(TFLITE_PATH):
         print(f"\n[SKIP] TFLite model not found at {TFLITE_PATH}")
-        print("  Run 'python 2_train_phase2.py' or 'python resume_stage3.py --export' to generate it.\n")
+        print("  Run 'python 2_train_phase2_v5.py' to generate it.\n")
         return
 
     print("\n" + "=" * 60)
-    print("  KERAS vs TFLITE COMPARISON")
+    print("  KERAS vs TFLITE COMPARISON (v5)")
     print("=" * 60)
 
     keras_model = load_classifier_for_inference()

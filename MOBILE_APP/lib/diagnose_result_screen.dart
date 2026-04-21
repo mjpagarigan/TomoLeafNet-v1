@@ -574,7 +574,6 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
 
   bool get _canShowGradCamButton {
     if (_isDetecting || _result == null) return false;
-    if (_result!.label == 'Healthy') return false;
     return widget.imagePath != null ||
         widget.preloadedLocalImagePath != null ||
         _historyImageUrl != null ||

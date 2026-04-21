@@ -102,7 +102,7 @@ def build_phase1_model():
     base.trainable = False  # Freeze base for Phase 1
 
     inputs = tf.keras.Input(shape=(IMG_SIZE, IMG_SIZE, 3))
-    x = base(inputs, training=False)
+    x = base(inputs)
     x = layers.GlobalAveragePooling2D()(x)
     x = layers.Dropout(0.3)(x)
     out = layers.Dense(5, activation="softmax")(x)
@@ -129,6 +129,7 @@ def train():
     train_ds = tf.keras.utils.image_dataset_from_directory(
         os.path.join(PUBLIC_SPLIT_DIR, "train"),
         image_size=(IMG_SIZE, IMG_SIZE),
+        crop_to_aspect_ratio=True,
         batch_size=BATCH_SIZE,
         label_mode="categorical",
         seed=SEED,
@@ -138,6 +139,7 @@ def train():
     val_ds = tf.keras.utils.image_dataset_from_directory(
         os.path.join(PUBLIC_SPLIT_DIR, "val"),
         image_size=(IMG_SIZE, IMG_SIZE),
+        crop_to_aspect_ratio=True,
         batch_size=BATCH_SIZE,
         label_mode="categorical",
         seed=SEED,
@@ -185,7 +187,7 @@ def train():
     # combinations still pass an unsupported `options=` argument when saving
     # the native .keras format, so keep the .h5 checkpoint as a supported
     # fallback for Phase 2.
-    best_model = tf.keras.models.load_model(h5_checkpoint)
+    best_model = tf.keras.models.load_model(h5_checkpoint, compile=False)
     try:
         best_model.save(MODEL_OUTPUT)
         print(f"\nPhase 1 best model saved to: {MODEL_OUTPUT}")

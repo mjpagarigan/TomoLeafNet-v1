@@ -1,6 +1,6 @@
-# TomoLeafNet v4 — Training Guide (Anaconda + Windows)
+# TomoLeafNet v5 - Training Guide (Anaconda + Windows)
 
-Step-by-step guide to retrain the TomoLeafNet v4 model from scratch on your
+Step-by-step guide to retrain the TomoLeafNet v5 model from scratch on your
 Lenovo IdeaPad (RTX 3050 4GB, 16GB RAM, CUDA 12.6).
 
 ---
@@ -107,20 +107,20 @@ python 0_augment_field_dataset.py
 ```
 
 This will:
-- Augment each class to 1,000 images
+- Augment each class to 600 images
 - Split into train/val/test (70/15/15)
 - Val and test contain **only real images** (no synthetics)
 - Output goes to `DATA-SPLIT/target_field/`
 
 Expected output:
 ```
-  Early_Blight: 377 real + 623 synthetic = 1000 total
-  Healthy:      902 real +  98 synthetic = 1000 total
-  Leaf_Miner:   560 real + 440 synthetic = 1000 total
-  Leaf_Mold:    386 real + 614 synthetic = 1000 total
-  Not_Tomato:   500 real + 500 synthetic = 1000 total
+  Early_Blight: 377 real + 223 synthetic = 600 total
+  Healthy:      902 real (already >= 600, sampling 600 real images)
+  Leaf_Miner:   560 real +  40 synthetic = 600 total
+  Leaf_Mold:    386 real + 214 synthetic = 600 total
+  Not_Tomato:   500 real + 100 synthetic = 600 total
 
-  Split complete: train=3500 | val=750 | test=750
+  Split complete: train=2100 | val=450 | test=450
 ```
 
 ---
@@ -135,7 +135,7 @@ python 1_train_phase1.py
 - Splits the public 5-class dataset (80/20 train/val)
 - Builds MobileNetV3Large with frozen backbone
 - Trains for 15 epochs on public data
-- Saves best model to `MODEL/phase1_base.keras`
+- Saves best model to `MODEL/phase1_base_v5.keras`
 
 **Expected time:** ~5-8 minutes on RTX 3050
 
@@ -167,26 +167,28 @@ python 2_train_phase2.py
 **What it does:**
 - Loads the Phase 1 warm-up model
 - 3-stage progressive unfreeze on field data:
-  - Stage 1 (20 epochs): Unfreeze last 30 layers, LR=5e-5
+  - Stage 1 (20 epochs): Unfreeze last 30 layers, LR=1e-4
   - Stage 2 (20 epochs): Unfreeze last 60 layers, LR=3e-5
   - Stage 3 (up to 45 epochs): Full model, LR=1e-5, early stopping
 - Augmentations: horizontal flip, rotation, zoom, translation, contrast,
   brightness, Gaussian noise, motion blur, random shadow, random erasing
-- Mixup (alpha=0.1) + class weights
-- Saves best model to `MODEL/tomoleafnet_v4_final.keras`
-- Exports TFLite to `MODEL/tomoleafnet_v4.tflite`
-- Saves training curves to `RESULTS/Phase2_Curves.png`
-- Saves epoch metrics to `RESULTS/Phase2_History.csv`
+- No Mixup in v5 (removed to reduce underfitting on minority disease classes)
+- Class weights are computed from real training images
+- Saves best model to `MODEL/tomoleafnet_v5_final.keras`
+- Exports TFLite to `MODEL/tomoleafnet_v5.tflite`
+- Saves training curves to `RESULTS/Phase2_Curves_v5.png`
+- Saves epoch metrics to `RESULTS/Phase2_History_v5.csv`
 
 **Expected time:** ~45-90 minutes on RTX 3050 (depends on early stopping)
 
-**Expected result:** Val accuracy ~90-95%
+**Expected result:** Better minority-class recall than v4, especially on
+Early_Blight and Leaf_Mold. Exact accuracy depends on the field split.
 
 ### If training crashes or you need to resume
 
 The best model is checkpointed every time val_accuracy improves. If training
 crashes mid-stage, the best weights so far are already saved in
-`MODEL/tomoleafnet_v4_final.keras`.
+`MODEL/tomoleafnet_v5_final.keras`.
 
 ---
 
@@ -200,7 +202,7 @@ python 3_evaluate_metrics.py
 - Loads the final Keras model
 - Evaluates on the held-out test set (real images only, never seen during training)
 - Prints classification report + per-class accuracy
-- Saves confusion matrix to `RESULTS/Confusion_Matrix.png`
+- Saves confusion matrix to `RESULTS/Confusion_Matrix_v5.png`
 - Compares Keras vs TFLite accuracy (flags >2% divergence)
 
 **Expected output:**
@@ -208,19 +210,19 @@ python 3_evaluate_metrics.py
   CLASSIFICATION REPORT
   ============================================================
                 precision    recall  f1-score   support
-   Early_Blight     0.92      0.89      0.90       150
-        Healthy     0.95      0.97      0.96       150
-     Leaf_Miner     0.91      0.93      0.92       150
-      Leaf_Mold     0.90      0.88      0.89       150
-     Not_Tomato     0.97      0.96      0.97       150
+   Early_Blight     0.xx      0.xx      0.xx        90
+        Healthy     0.xx      0.xx      0.xx        90
+     Leaf_Miner     0.xx      0.xx      0.xx        90
+      Leaf_Mold     0.xx      0.xx      0.xx        90
+     Not_Tomato     0.xx      0.xx      0.xx        90
 
-       accuracy                         0.93       750
+       accuracy                         0.xx       450
   ============================================================
 
   KERAS vs TFLITE COMPARISON
   ============================================================
-    Keras accuracy:     93.xx%
-    TFLite accuracy:    92.xx%
+    Keras accuracy:     xx.xx%
+    TFLite accuracy:    xx.xx%
     Accuracy delta:     0.xx%
     [OK] TFLite accuracy is within acceptable range.
 ```
@@ -232,7 +234,7 @@ python 3_evaluate_metrics.py
 ### 9a. Copy the TFLite model to the Flutter assets
 
 ```bash
-copy MODEL\tomoleafnet_v4.tflite MOBILE_APP\assets\tomoleafnet_v4.tflite
+copy MODEL\tomoleafnet_v5.tflite MOBILE_APP\assets\tomoleafnet_v5.tflite
 ```
 
 ### 9b. Verify labels match
@@ -270,7 +272,7 @@ python 1_train_phase1.py
 python 2_train_phase2.py
 python 3_evaluate_metrics.py
 
-copy MODEL\tomoleafnet_v4.tflite MOBILE_APP\assets\tomoleafnet_v4.tflite
+copy MODEL\tomoleafnet_v5.tflite MOBILE_APP\assets\tomoleafnet_v5.tflite
 ```
 
 ---

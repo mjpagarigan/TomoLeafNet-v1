@@ -219,8 +219,7 @@ class _CameraScreenState extends State<CameraScreen>
       if (_recentDetections.length > _smoothingWindowSize) {
         _recentDetections.removeAt(0);
       }
-      final positiveCount =
-          _recentDetections.where((d) => d).length;
+      final positiveCount = _recentDetections.where((d) => d).length;
       final smoothedIsTomato = positiveCount >= _smoothingThreshold;
 
       // Build a smoothed result that reflects the temporal consensus
@@ -348,22 +347,17 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  Future<String> _cropToSquare(String imagePath) async {
-    try {
-      final bytes = await File(imagePath).readAsBytes();
-      final croppedPath = imagePath.replaceAll('.jpg', '_cropped.jpg');
-
-      // Run expensive image decode + crop + encode in a background isolate
-      // so the UI thread stays responsive during the transition.
-      final croppedBytes = await compute(_cropToSquareIsolate, bytes);
-      if (croppedBytes == null) return imagePath;
-
-      await File(croppedPath).writeAsBytes(croppedBytes);
-      return croppedPath;
-    } catch (e) {
-      debugPrint("Crop error: $e, falling back to original");
-      return imagePath;
-    }
+  Future<String?> _openCropper(String imagePath) async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _CropScreen(
+          imagePath: imagePath,
+          isFilipino: _isFilipino,
+        ),
+      ),
+    );
+    return result;
   }
 
   Future<void> _navigateToResult(String imagePath) async {
@@ -402,10 +396,13 @@ class _CameraScreenState extends State<CameraScreen>
       await _stopImageStream();
       await _controller!.setFlashMode(_flashMode);
       final image = await _controller!.takePicture();
-      final croppedPath = await _cropToSquare(image.path);
 
       if (!mounted) return;
       setState(() => _isProcessing = false);
+
+      // Open interactive cropper — user can frame the leaf precisely
+      final croppedPath = await _openCropper(image.path);
+      if (croppedPath == null || !mounted) return;
 
       navigated = true;
       await _navigateToResult(croppedPath);
@@ -437,10 +434,13 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
 
-      final croppedPath = await _cropToSquare(pickedFile.path);
       if (!mounted) return;
-
       setState(() => _isProcessing = false);
+
+      // Open interactive cropper — user can frame the leaf precisely
+      final croppedPath = await _openCropper(pickedFile.path);
+      if (croppedPath == null || !mounted) return;
+
       navigated = true;
       await _navigateToResult(croppedPath);
     } finally {
@@ -893,24 +893,973 @@ class SquareViewfinderPainter extends CustomPainter {
       oldDelegate.cornerColor != cornerColor;
 }
 
-/// Top-level function for compute() — runs image crop in a background isolate.
-/// Decodes JPEG bytes, center-crops to square, re-encodes at quality 90.
-Uint8List? _cropToSquareIsolate(Uint8List bytes) {
-  final decoded = img.decodeImage(bytes);
+// ─────────────────────────────────────────────────────────────────────
+// Flutter-native crop screen with draggable 1:1 crop box.
+// Drag the box center to move, drag corners to resize (stays square).
+// ─────────────────────────────────────────────────────────────────────
+
+class _CropScreen extends StatefulWidget {
+  final String imagePath;
+  final bool isFilipino;
+
+  const _CropScreen({required this.imagePath, required this.isFilipino});
+
+  @override
+  State<_CropScreen> createState() => _CropScreenState();
+}
+
+enum _CropPreset { fit, full }
+
+class _CropScreenState extends State<_CropScreen> {
+  bool _isCropping = false;
+  bool _isSquareMode = false;
+  bool _showGrid = true;
+  Size? _sourceImageSize;
+  Rect _imageRect = Rect.zero;
+  Rect _cropRect = Rect.zero;
+
+  static const double _minCropWidth = 96;
+  static const double _minCropHeight = 96;
+  static const double _handleTouchSize = 44;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadImageSize();
+  }
+
+  Future<void> _loadImageSize() async {
+    try {
+      final bytes = await File(widget.imagePath).readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (!mounted || decoded == null) return;
+      setState(() {
+        _sourceImageSize = Size(
+          decoded.width.toDouble(),
+          decoded.height.toDouble(),
+        );
+      });
+    } catch (e) {
+      debugPrint('Crop image decode error: $e');
+      if (!mounted) return;
+      setState(() {
+        _sourceImageSize = const Size(1, 1);
+      });
+    }
+  }
+
+  Rect _containRect(Size viewport, Size source) {
+    final sourceAspect = source.width / source.height;
+    final viewAspect = viewport.width / viewport.height;
+
+    if (sourceAspect > viewAspect) {
+      final width = viewport.width;
+      final height = width / sourceAspect;
+      return Rect.fromLTWH(0, (viewport.height - height) / 2, width, height);
+    }
+
+    final height = viewport.height;
+    final width = height * sourceAspect;
+    return Rect.fromLTWH((viewport.width - width) / 2, 0, width, height);
+  }
+
+  void _syncImageRect(Size viewport) {
+    final source = _sourceImageSize;
+    if (source == null || viewport.isEmpty) return;
+
+    final nextRect = _containRect(viewport, source);
+    final changed = (_imageRect.left - nextRect.left).abs() > 0.5 ||
+        (_imageRect.top - nextRect.top).abs() > 0.5 ||
+        (_imageRect.width - nextRect.width).abs() > 0.5 ||
+        (_imageRect.height - nextRect.height).abs() > 0.5;
+
+    if (!changed) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _imageRect = nextRect;
+        _cropRect = _defaultCropRect(_CropPreset.fit);
+      });
+    });
+  }
+
+  Rect _defaultCropRect(_CropPreset preset) {
+    if (_imageRect == Rect.zero) return Rect.zero;
+
+    if (_isSquareMode) {
+      final availableWidth = preset == _CropPreset.full
+          ? _imageRect.width - 16
+          : _imageRect.width * 0.82;
+      final availableHeight = preset == _CropPreset.full
+          ? _imageRect.height - 16
+          : _imageRect.height * 0.82;
+      final side =
+          availableWidth < availableHeight ? availableWidth : availableHeight;
+      return _clampCropRect(
+        Rect.fromCenter(
+          center: _imageRect.center,
+          width: side,
+          height: side,
+        ),
+      );
+    }
+
+    if (preset == _CropPreset.full) {
+      return _clampCropRect(
+        Rect.fromLTWH(
+          _imageRect.left + 8,
+          _imageRect.top + 8,
+          _imageRect.width - 16,
+          _imageRect.height - 16,
+        ),
+      );
+    }
+
+    return _clampCropRect(
+      Rect.fromLTWH(
+        _imageRect.left + (_imageRect.width * 0.08),
+        _imageRect.top + (_imageRect.height * 0.08),
+        _imageRect.width * 0.84,
+        _imageRect.height * 0.68,
+      ),
+    );
+  }
+
+  Rect _clampCropRect(Rect rect) {
+    if (_imageRect == Rect.zero) return rect;
+
+    double width = rect.width;
+    double height = rect.height;
+
+    if (_isSquareMode) {
+      final side = width < height ? width : height;
+      width = side < _minCropWidth ? _minCropWidth : side;
+      height = width;
+    } else {
+      width = width < _minCropWidth ? _minCropWidth : width;
+      height = height < _minCropHeight ? _minCropHeight : height;
+    }
+
+    if (width > _imageRect.width) width = _imageRect.width;
+    if (height > _imageRect.height) height = _imageRect.height;
+
+    double left = rect.left;
+    double top = rect.top;
+
+    if (left < _imageRect.left) left = _imageRect.left;
+    if (top < _imageRect.top) top = _imageRect.top;
+    if (left + width > _imageRect.right) left = _imageRect.right - width;
+    if (top + height > _imageRect.bottom) top = _imageRect.bottom - height;
+
+    return Rect.fromLTWH(left, top, width, height);
+  }
+
+  void _setPreset(_CropPreset preset) {
+    if (_imageRect == Rect.zero) return;
+    setState(() {
+      _cropRect = _defaultCropRect(preset);
+    });
+  }
+
+  void _toggleSquareMode() {
+    if (_imageRect == Rect.zero) return;
+
+    setState(() {
+      _isSquareMode = !_isSquareMode;
+      if (_cropRect == Rect.zero) {
+        _cropRect = _defaultCropRect(_CropPreset.fit);
+        return;
+      }
+
+      final center = _cropRect.center;
+      if (_isSquareMode) {
+        final side = _cropRect.width < _cropRect.height
+            ? _cropRect.width
+            : _cropRect.height;
+        _cropRect = _clampCropRect(
+          Rect.fromCenter(center: center, width: side, height: side),
+        );
+      } else {
+        final width = (_cropRect.width * 1.18).clamp(
+          _minCropWidth,
+          _imageRect.width,
+        );
+        final height = (_cropRect.height * 0.82).clamp(
+          _minCropHeight,
+          _imageRect.height,
+        );
+        _cropRect = _clampCropRect(
+          Rect.fromCenter(center: center, width: width, height: height),
+        );
+      }
+    });
+  }
+
+  void _resetCrop() {
+    _setPreset(_CropPreset.fit);
+  }
+
+  void _onMoveCrop(DragUpdateDetails details) {
+    if (_cropRect == Rect.zero) return;
+    setState(() {
+      _cropRect = _clampCropRect(
+        _cropRect.shift(details.delta),
+      );
+    });
+  }
+
+  Rect _resizeSquareFromCorner(int corner, Offset delta) {
+    final rect = _cropRect;
+    switch (corner) {
+      case 0:
+        final anchor = Offset(rect.right, rect.bottom);
+        final side = (anchor.dx - (rect.left + delta.dx)).abs().clamp(
+            _minCropWidth,
+            _imageRect.width < _imageRect.height
+                ? _imageRect.width
+                : _imageRect.height);
+        return Rect.fromLTWH(anchor.dx - side, anchor.dy - side, side, side);
+      case 1:
+        final anchor = Offset(rect.left, rect.bottom);
+        final side = ((rect.right + delta.dx) - anchor.dx).abs().clamp(
+            _minCropWidth,
+            _imageRect.width < _imageRect.height
+                ? _imageRect.width
+                : _imageRect.height);
+        return Rect.fromLTWH(anchor.dx, anchor.dy - side, side, side);
+      case 2:
+        final anchor = Offset(rect.left, rect.top);
+        final side = ((rect.right + delta.dx) - anchor.dx).abs().clamp(
+            _minCropWidth,
+            _imageRect.width < _imageRect.height
+                ? _imageRect.width
+                : _imageRect.height);
+        return Rect.fromLTWH(anchor.dx, anchor.dy, side, side);
+      default:
+        final anchor = Offset(rect.right, rect.top);
+        final side = (anchor.dx - (rect.left + delta.dx)).abs().clamp(
+            _minCropWidth,
+            _imageRect.width < _imageRect.height
+                ? _imageRect.width
+                : _imageRect.height);
+        return Rect.fromLTWH(anchor.dx - side, anchor.dy, side, side);
+    }
+  }
+
+  void _onCornerDrag(int corner, DragUpdateDetails details) {
+    if (_cropRect == Rect.zero) return;
+
+    setState(() {
+      if (_isSquareMode) {
+        _cropRect = _clampCropRect(
+          _resizeSquareFromCorner(corner, details.delta),
+        );
+        return;
+      }
+
+      Rect next = _cropRect;
+      switch (corner) {
+        case 0:
+          next = Rect.fromLTRB(
+            next.left + details.delta.dx,
+            next.top + details.delta.dy,
+            next.right,
+            next.bottom,
+          );
+          break;
+        case 1:
+          next = Rect.fromLTRB(
+            next.left,
+            next.top + details.delta.dy,
+            next.right + details.delta.dx,
+            next.bottom,
+          );
+          break;
+        case 2:
+          next = Rect.fromLTRB(
+            next.left,
+            next.top,
+            next.right + details.delta.dx,
+            next.bottom + details.delta.dy,
+          );
+          break;
+        case 3:
+          next = Rect.fromLTRB(
+            next.left + details.delta.dx,
+            next.top,
+            next.right,
+            next.bottom + details.delta.dy,
+          );
+          break;
+      }
+      _cropRect = _clampCropRect(next);
+    });
+  }
+
+  void _onEdgeDrag(int edge, DragUpdateDetails details) {
+    if (_cropRect == Rect.zero) return;
+
+    setState(() {
+      if (_isSquareMode) {
+        final rect = _cropRect;
+        switch (edge) {
+          case 0:
+            final anchorBottom = rect.bottom;
+            final side = (anchorBottom - (rect.top + details.delta.dy))
+                .abs()
+                .clamp(
+                    _minCropWidth,
+                    _imageRect.width < _imageRect.height
+                        ? _imageRect.width
+                        : _imageRect.height);
+            _cropRect = _clampCropRect(
+              Rect.fromCenter(
+                center: Offset(rect.center.dx, anchorBottom - side / 2),
+                width: side,
+                height: side,
+              ),
+            );
+            break;
+          case 1:
+            final anchorLeft = rect.left;
+            final side = ((rect.right + details.delta.dx) - anchorLeft)
+                .abs()
+                .clamp(
+                    _minCropWidth,
+                    _imageRect.width < _imageRect.height
+                        ? _imageRect.width
+                        : _imageRect.height);
+            _cropRect = _clampCropRect(
+              Rect.fromCenter(
+                center: Offset(anchorLeft + side / 2, rect.center.dy),
+                width: side,
+                height: side,
+              ),
+            );
+            break;
+          case 2:
+            final anchorTop = rect.top;
+            final side = ((rect.bottom + details.delta.dy) - anchorTop)
+                .abs()
+                .clamp(
+                    _minCropWidth,
+                    _imageRect.width < _imageRect.height
+                        ? _imageRect.width
+                        : _imageRect.height);
+            _cropRect = _clampCropRect(
+              Rect.fromCenter(
+                center: Offset(rect.center.dx, anchorTop + side / 2),
+                width: side,
+                height: side,
+              ),
+            );
+            break;
+          case 3:
+            final anchorRight = rect.right;
+            final side = (anchorRight - (rect.left + details.delta.dx))
+                .abs()
+                .clamp(
+                    _minCropWidth,
+                    _imageRect.width < _imageRect.height
+                        ? _imageRect.width
+                        : _imageRect.height);
+            _cropRect = _clampCropRect(
+              Rect.fromCenter(
+                center: Offset(anchorRight - side / 2, rect.center.dy),
+                width: side,
+                height: side,
+              ),
+            );
+            break;
+        }
+        return;
+      }
+
+      Rect next = _cropRect;
+      switch (edge) {
+        case 0:
+          next = Rect.fromLTRB(
+            next.left,
+            next.top + details.delta.dy,
+            next.right,
+            next.bottom,
+          );
+          break;
+        case 1:
+          next = Rect.fromLTRB(
+            next.left,
+            next.top,
+            next.right + details.delta.dx,
+            next.bottom,
+          );
+          break;
+        case 2:
+          next = Rect.fromLTRB(
+            next.left,
+            next.top,
+            next.right,
+            next.bottom + details.delta.dy,
+          );
+          break;
+        case 3:
+          next = Rect.fromLTRB(
+            next.left + details.delta.dx,
+            next.top,
+            next.right,
+            next.bottom,
+          );
+          break;
+      }
+      _cropRect = _clampCropRect(next);
+    });
+  }
+
+  String _buildCroppedPath() {
+    final lastDot = widget.imagePath.lastIndexOf('.');
+    if (lastDot <= 0) {
+      return '${widget.imagePath}_cropped.jpg';
+    }
+    final basePath = widget.imagePath.substring(0, lastDot);
+    return '${basePath}_cropped.jpg';
+  }
+
+  Future<void> _cropAndReturn() async {
+    if (_isCropping || _cropRect == Rect.zero || _imageRect == Rect.zero) {
+      return;
+    }
+    setState(() => _isCropping = true);
+    final navigator = Navigator.of(context);
+
+    try {
+      final normLeft = ((_cropRect.left - _imageRect.left) / _imageRect.width)
+          .clamp(0.0, 1.0);
+      final normTop = ((_cropRect.top - _imageRect.top) / _imageRect.height)
+          .clamp(0.0, 1.0);
+      final normRight = ((_cropRect.right - _imageRect.left) / _imageRect.width)
+          .clamp(0.0, 1.0);
+      final normBottom =
+          ((_cropRect.bottom - _imageRect.top) / _imageRect.height)
+              .clamp(0.0, 1.0);
+
+      final bytes = await File(widget.imagePath).readAsBytes();
+      final croppedBytes = await compute(
+        _cropImageIsolate,
+        _CropParams(
+          imageBytes: bytes,
+          left: normLeft,
+          top: normTop,
+          right: normRight,
+          bottom: normBottom,
+        ),
+      );
+
+      if (croppedBytes == null || !mounted) {
+        navigator.pop(widget.imagePath);
+        return;
+      }
+
+      final croppedPath = _buildCroppedPath();
+      await File(croppedPath).writeAsBytes(croppedBytes);
+      if (mounted) {
+        navigator.pop(croppedPath);
+      }
+    } catch (e) {
+      debugPrint('Crop error: $e');
+      if (mounted) {
+        navigator.pop(widget.imagePath);
+      }
+    }
+  }
+
+  Widget _buildCornerHandle(int corner, double left, double top) {
+    return Positioned(
+      left: left - (_handleTouchSize / 2),
+      top: top - (_handleTouchSize / 2),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanUpdate: (details) => _onCornerDrag(corner, details),
+        child: const SizedBox(
+          width: _handleTouchSize,
+          height: _handleTouchSize,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEdgeHandle(
+    int edge, {
+    required double left,
+    required double top,
+    required double width,
+    required double height,
+  }) {
+    return Positioned(
+      left: left,
+      top: top,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanUpdate: (details) => _onEdgeDrag(edge, details),
+        child: SizedBox(
+          width: width,
+          height: height,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickAction({
+    required bool isActive,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: TomoDecorations.card(
+          isDark: true,
+          radius: 16,
+          color: isActive
+              ? TomoPalette.surfaceRaised
+              : Colors.white.withOpacity(0.06),
+          elevated: false,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isActive ? TomoPalette.primary : Colors.white,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: GoogleFonts.dmSans(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: isActive
+                    ? TomoPalette.primary
+                    : Colors.white.withOpacity(0.58),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final imageSize = _sourceImageSize;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+              child: Row(
+                children: [
+                  Container(
+                    decoration: TomoDecorations.pill(isDark: true),
+                    child: IconButton(
+                      onPressed: () => Navigator.pop(context, null),
+                      icon: const Icon(Icons.close_rounded),
+                      color: Colors.white,
+                      tooltip: 'Close',
+                    ),
+                  ),
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: TomoPalette.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.isFilipino
+                              ? 'I-frame ang Dahon'
+                              : 'Frame the Leaf',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    decoration: TomoDecorations.pill(isDark: true),
+                    child: IconButton(
+                      onPressed: () => setState(() => _showGrid = !_showGrid),
+                      icon: Icon(
+                        _showGrid
+                            ? Icons.grid_on_rounded
+                            : Icons.grid_off_rounded,
+                      ),
+                      color: Colors.white,
+                      tooltip: 'Toggle grid',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: TomoDecorations.pill(isDark: true),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.center_focus_strong_rounded,
+                      size: 14,
+                      color: TomoPalette.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      widget.isFilipino
+                          ? 'I-drag ang mga sulok, gilid, o mismong frame.'
+                          : 'Drag the corners, edges, or the frame itself.',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (imageSize == null) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                            color: TomoPalette.primary),
+                      );
+                    }
+
+                    _syncImageRect(constraints.biggest);
+
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.file(
+                            File(widget.imagePath),
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        if (_cropRect != Rect.zero) ...[
+                          IgnorePointer(
+                            child: CustomPaint(
+                              size: constraints.biggest,
+                              painter: _CropOverlayPainter(
+                                cropRect: _cropRect,
+                                showGrid: _showGrid,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: _cropRect.left,
+                            top: _cropRect.top,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onPanUpdate: _onMoveCrop,
+                              child: SizedBox(
+                                width: _cropRect.width,
+                                height: _cropRect.height,
+                              ),
+                            ),
+                          ),
+                          _buildCornerHandle(
+                            0,
+                            _cropRect.left,
+                            _cropRect.top,
+                          ),
+                          _buildCornerHandle(
+                            1,
+                            _cropRect.right,
+                            _cropRect.top,
+                          ),
+                          _buildCornerHandle(
+                            2,
+                            _cropRect.right,
+                            _cropRect.bottom,
+                          ),
+                          _buildCornerHandle(
+                            3,
+                            _cropRect.left,
+                            _cropRect.bottom,
+                          ),
+                          _buildEdgeHandle(
+                            0,
+                            left: _cropRect.left + (_cropRect.width * 0.3),
+                            top: _cropRect.top - 10,
+                            width: _cropRect.width * 0.4,
+                            height: 20,
+                          ),
+                          _buildEdgeHandle(
+                            1,
+                            left: _cropRect.right - 10,
+                            top: _cropRect.top + (_cropRect.height * 0.3),
+                            width: 20,
+                            height: _cropRect.height * 0.4,
+                          ),
+                          _buildEdgeHandle(
+                            2,
+                            left: _cropRect.left + (_cropRect.width * 0.3),
+                            top: _cropRect.bottom - 10,
+                            width: _cropRect.width * 0.4,
+                            height: 20,
+                          ),
+                          _buildEdgeHandle(
+                            3,
+                            left: _cropRect.left - 10,
+                            top: _cropRect.top + (_cropRect.height * 0.3),
+                            width: 20,
+                            height: _cropRect.height * 0.4,
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildQuickAction(
+                    isActive: false,
+                    icon: Icons.fit_screen_rounded,
+                    label: 'Fit',
+                    onTap: () => _setPreset(_CropPreset.fit),
+                  ),
+                  const SizedBox(width: 10),
+                  _buildQuickAction(
+                    isActive: false,
+                    icon: Icons.fullscreen_rounded,
+                    label: 'Full',
+                    onTap: () => _setPreset(_CropPreset.full),
+                  ),
+                  const SizedBox(width: 10),
+                  _buildQuickAction(
+                    isActive: _isSquareMode,
+                    icon: Icons.crop_square_rounded,
+                    label: '1:1',
+                    onTap: _toggleSquareMode,
+                  ),
+                  const SizedBox(width: 10),
+                  _buildQuickAction(
+                    isActive: false,
+                    icon: Icons.refresh_rounded,
+                    label: 'Reset',
+                    onTap: _resetCrop,
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+              child: SizedBox(
+                width: double.infinity,
+                height: 58,
+                child: ElevatedButton.icon(
+                  onPressed: _isCropping ? null : _cropAndReturn,
+                  icon: _isCropping
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.arrow_forward_rounded, size: 20),
+                  label: Text(
+                    _isCropping
+                        ? (widget.isFilipino
+                            ? 'Pinoproseso...'
+                            : 'Processing...')
+                        : (widget.isFilipino
+                            ? 'I-crop at Suriin'
+                            : 'Crop and Analyze'),
+                    style: GoogleFonts.dmSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: TomoPalette.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CropOverlayPainter extends CustomPainter {
+  final Rect cropRect;
+  final bool showGrid;
+
+  _CropOverlayPainter({
+    required this.cropRect,
+    required this.showGrid,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final overlayPath = Path()
+      ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..addRRect(RRect.fromRectAndRadius(cropRect, const Radius.circular(6)))
+      ..fillType = PathFillType.evenOdd;
+
+    canvas.drawPath(overlayPath, Paint()..color = Colors.black.withAlpha(165));
+
+    final borderPaint = Paint()
+      ..color = const Color(0xFF43D65D)
+      ..strokeWidth = 1.6
+      ..style = PaintingStyle.stroke;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(cropRect, const Radius.circular(6)),
+      borderPaint,
+    );
+
+    if (showGrid) {
+      final gridPaint = Paint()
+        ..color = Colors.white.withAlpha(36)
+        ..strokeWidth = 0.8;
+
+      for (int i = 1; i < 3; i++) {
+        final x = cropRect.left + cropRect.width * i / 3;
+        canvas.drawLine(
+          Offset(x, cropRect.top),
+          Offset(x, cropRect.bottom),
+          gridPaint,
+        );
+        final y = cropRect.top + cropRect.height * i / 3;
+        canvas.drawLine(
+          Offset(cropRect.left, y),
+          Offset(cropRect.right, y),
+          gridPaint,
+        );
+      }
+    }
+
+    final cornerPaint = Paint()
+      ..color = const Color(0xFF43D65D)
+      ..strokeWidth = 3.0
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    const cornerLength = 22.0;
+    final l = cropRect.left;
+    final t = cropRect.top;
+    final r = cropRect.right;
+    final b = cropRect.bottom;
+
+    canvas.drawLine(Offset(l, t + cornerLength), Offset(l, t), cornerPaint);
+    canvas.drawLine(Offset(l, t), Offset(l + cornerLength, t), cornerPaint);
+
+    canvas.drawLine(Offset(r - cornerLength, t), Offset(r, t), cornerPaint);
+    canvas.drawLine(Offset(r, t), Offset(r, t + cornerLength), cornerPaint);
+
+    canvas.drawLine(Offset(r, b - cornerLength), Offset(r, b), cornerPaint);
+    canvas.drawLine(Offset(r, b), Offset(r - cornerLength, b), cornerPaint);
+
+    canvas.drawLine(Offset(l + cornerLength, b), Offset(l, b), cornerPaint);
+    canvas.drawLine(Offset(l, b), Offset(l, b - cornerLength), cornerPaint);
+
+    final edgePaint = Paint()
+      ..color = const Color(0xFF43D65D)
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawLine(
+      Offset(cropRect.center.dx - 8, t),
+      Offset(cropRect.center.dx + 8, t),
+      edgePaint,
+    );
+    canvas.drawLine(
+      Offset(cropRect.center.dx - 8, b),
+      Offset(cropRect.center.dx + 8, b),
+      edgePaint,
+    );
+    canvas.drawLine(
+      Offset(l, cropRect.center.dy - 8),
+      Offset(l, cropRect.center.dy + 8),
+      edgePaint,
+    );
+    canvas.drawLine(
+      Offset(r, cropRect.center.dy - 8),
+      Offset(r, cropRect.center.dy + 8),
+      edgePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _CropOverlayPainter oldDelegate) =>
+      oldDelegate.cropRect != cropRect || oldDelegate.showGrid != showGrid;
+}
+
+class _CropParams {
+  final Uint8List imageBytes;
+  final double left, top, right, bottom;
+
+  const _CropParams({
+    required this.imageBytes,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+}
+
+/// Runs in a background isolate, crops to the selected frame, and re-encodes.
+Uint8List? _cropImageIsolate(_CropParams params) {
+  final decoded = img.decodeImage(params.imageBytes);
   if (decoded == null) return null;
 
-  final int minDim =
-      decoded.width < decoded.height ? decoded.width : decoded.height;
-  final int cropX = (decoded.width - minDim) ~/ 2;
-  final int cropY = (decoded.height - minDim) ~/ 2;
+  final w = decoded.width;
+  final h = decoded.height;
 
-  final cropped = img.copyCrop(
-    decoded,
-    x: cropX,
-    y: cropY,
-    width: minDim,
-    height: minDim,
-  );
+  final cropX = (params.left * w).round().clamp(0, w - 1);
+  final cropY = (params.top * h).round().clamp(0, h - 1);
+  var cropW = ((params.right - params.left) * w).round().clamp(1, w - cropX);
+  var cropH = ((params.bottom - params.top) * h).round().clamp(1, h - cropY);
 
+  final cropped =
+      img.copyCrop(decoded, x: cropX, y: cropY, width: cropW, height: cropH);
   return Uint8List.fromList(img.encodeJpg(cropped, quality: 90));
 }

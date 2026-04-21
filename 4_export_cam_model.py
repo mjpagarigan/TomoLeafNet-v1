@@ -24,8 +24,9 @@ import keras
 
 # ── Paths ─────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-KERAS_MODEL = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v4_final.keras")
-OUTPUT_TFLITE = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v4_cam.tflite")
+KERAS_MODEL = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v5_final.keras")
+KERAS_MODEL_H5 = KERAS_MODEL.replace(".keras", ".h5")
+OUTPUT_TFLITE = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v5_cam.tflite")
 
 
 # ── Custom LR schedule (needed to load the .keras file) ──────────────
@@ -62,7 +63,9 @@ class WarmupCosineDecay(keras.optimizers.schedules.LearningRateSchedule):
 
 def main():
     print("Loading Keras model...")
-    model = keras.models.load_model(KERAS_MODEL)
+    model_path = KERAS_MODEL if os.path.exists(KERAS_MODEL) else KERAS_MODEL_H5
+    model = keras.models.load_model(model_path, compile=False)
+    print(f"Loaded: {model_path}")
     model.summary()
 
     # ── Identify layers ───────────────────────────────────────────────
@@ -204,7 +207,7 @@ def main():
         elif len(shape) == 4:
             print(f"--> CAM maps are output index {i}")
 
-    print("\nDone! Copy MODEL/tomoleafnet_v4_cam.tflite to MOBILE_APP/assets/")
+    print("\nDone! Copy MODEL/tomoleafnet_v5_cam.tflite to MOBILE_APP/assets/")
 
 
 if __name__ == "__main__":

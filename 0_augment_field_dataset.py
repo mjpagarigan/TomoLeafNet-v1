@@ -29,14 +29,15 @@ IMG_SIZE = 224
 SEED = 42
 
 # ── Augmentation pipeline ─────────────────────────────────────────────
-# Vertical flip removed: tomato leaves have a natural orientation.
+# Horizontal-only flip: leaves have natural vertical orientation.
+# Moderate augmentation preserves disease textures (spots, mold patterns).
 augment = tf.keras.Sequential([
     layers.RandomFlip("horizontal"),
-    layers.RandomRotation(0.25),
-    layers.RandomZoom((-0.3, 0.15)),
-    layers.RandomTranslation(0.2, 0.2),
-    layers.RandomContrast(0.3),
-    layers.RandomBrightness(0.3),
+    layers.RandomRotation(0.15),
+    layers.RandomZoom((-0.2, 0.10)),
+    layers.RandomTranslation(0.15, 0.15),
+    layers.RandomContrast(0.2),
+    layers.RandomBrightness(0.2),
 ])
 
 VALID_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}

@@ -1,15 +1,13 @@
 """
-resume_stage3.py — Resume Stage 3 training from the best checkpoint.
+resume_stage3.py - Resume Stage 3 training from the best checkpoint.
 
-Loads MODEL/tomoleafnet_v4_final.keras (87% val accuracy checkpoint),
-unfreezes all layers, and continues training with the same Stage 3
-settings (lr=1e-5, EarlyStopping patience=12).
-
-After training, exports TFLite and plots curves.
+Loads the best TomoLeafNet checkpoint, rebuilds the classifier graph so the
+backbone is not trapped behind a baked `training=False` call, and continues
+full-backbone fine-tuning with the same Stage 3 settings.
 
 Usage:
-    python resume_stage3.py          # Resume training
-    python resume_stage3.py --export  # Skip training, just export TFLite
+    python resume_stage3.py
+    python resume_stage3.py --export
 """
 
 import math
@@ -19,22 +17,19 @@ import sys
 import tensorflow as tf
 from tensorflow.keras import layers
 
-# ── Paths ─────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FIELD_DATA_DIR = os.path.join(BASE_DIR, "DATA-SPLIT", "target_field")
-FINAL_KERAS = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v4_final.keras")
-FINAL_TFLITE = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v4.tflite")
+FINAL_KERAS = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v5_final.keras")
+FINAL_H5 = FINAL_KERAS.replace(".keras", ".h5")
+FINAL_TFLITE = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v5.tflite")
 RESULTS_DIR = os.path.join(BASE_DIR, "RESULTS")
-CSV_LOG_PATH = os.path.join(RESULTS_DIR, "Resume_History.csv")
+CSV_LOG_PATH = os.path.join(RESULTS_DIR, "Resume_History_v5.csv")
 
 IMG_SIZE = 224
 BATCH_SIZE = 32
 SEED = 42
-RESUME_EPOCHS = 30  # Additional epochs to train
-MIXUP_ALPHA = 0.1
+RESUME_EPOCHS = 30
 
-
-# ── Custom LR schedule (needed for model loading) ───────────────────
 
 @tf.keras.utils.register_keras_serializable()
 class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -66,72 +61,199 @@ class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         }
 
 
-# ── Augmentation ─────────────────────────────────────────────────────
 augment = tf.keras.Sequential([
-    layers.RandomFlip("horizontal_and_vertical"),
-    layers.RandomRotation(0.25),
-    layers.RandomZoom((-0.3, 0.15)),
-    layers.RandomTranslation(0.2, 0.2),
-    layers.RandomContrast(0.3),
-    layers.RandomBrightness(0.3),
-    layers.GaussianNoise(0.06),
+    layers.RandomFlip("horizontal"),
+    layers.RandomRotation(0.10),
+    layers.RandomZoom((-0.15, 0.10)),
+    layers.RandomTranslation(0.10, 0.10),
+    layers.RandomContrast(0.15),
+    layers.RandomBrightness(0.15),
+    layers.GaussianNoise(15.0),
 ])
 
 
-def mixup(images, labels, alpha=MIXUP_ALPHA):
-    batch_size = tf.shape(images)[0]
-    lam = tf.random.gamma(shape=[batch_size, 1, 1, 1], alpha=alpha)
-    lam = tf.maximum(lam, 1.0 - lam)
-    lam_labels = tf.reshape(lam, [batch_size, 1])
-    indices = tf.random.shuffle(tf.range(batch_size))
-    shuffled_images = tf.gather(images, indices)
-    shuffled_labels = tf.gather(labels, indices)
-    mixed_images = lam * images + (1.0 - lam) * shuffled_images
-    mixed_labels = lam_labels * labels + (1.0 - lam_labels) * shuffled_labels
-    return mixed_images, mixed_labels
+def resolve_model_path():
+    return FINAL_KERAS if os.path.exists(FINAL_KERAS) else FINAL_H5
 
 
-def augment_and_mixup(images, labels):
-    """Apply spatial augmentation, Mixup, then MobileNetV3 preprocessing."""
+def random_motion_blur(images, max_kernel=7):
+    """Simulate moderate hand-shake / wind blur."""
+    def _blur(imgs):
+        k = tf.random.uniform([], 3, max_kernel + 1, dtype=tf.int32)
+        kernel = tf.ones([1, k, 1, 1], dtype=tf.float32) / tf.cast(k, tf.float32)
+        channels = tf.split(imgs, 3, axis=-1)
+        blurred = tf.concat(
+            [tf.nn.depthwise_conv2d(c, kernel, [1, 1, 1, 1], "SAME") for c in channels],
+            axis=-1,
+        )
+        return blurred
+
+    return tf.cond(tf.random.uniform([]) < 0.15, lambda: _blur(images), lambda: images)
+
+
+def random_shadow(images):
+    """Overlay a dark rectangle to mimic partial canopy shadow."""
+    def _shadow(imgs):
+        shape = tf.shape(imgs)
+        h = shape[1]
+        w = shape[2]
+        y1 = tf.random.uniform([], 0.0, 0.5)
+        x1 = tf.random.uniform([], 0.0, 0.5)
+        y2 = tf.random.uniform([], y1 + 0.2, tf.minimum(y1 + 0.5, 1.0))
+        x2 = tf.random.uniform([], x1 + 0.2, tf.minimum(x1 + 0.5, 1.0))
+        darken = tf.random.uniform([], 0.5, 0.8)
+        rows = tf.cast(tf.range(h), tf.float32) / tf.cast(h, tf.float32)
+        cols = tf.cast(tf.range(w), tf.float32) / tf.cast(w, tf.float32)
+        row_mask = tf.cast((rows >= y1) & (rows < y2), tf.float32)
+        col_mask = tf.cast((cols >= x1) & (cols < x2), tf.float32)
+        mask = tf.einsum("h,w->hw", row_mask, col_mask)
+        mask = 1.0 - mask * (1.0 - darken)
+        mask = tf.reshape(mask, [1, h, w, 1])
+        return imgs * mask
+
+    return tf.cond(tf.random.uniform([]) < 0.15, lambda: _shadow(images), lambda: images)
+
+
+def random_erasing(images, max_patches=3):
+    """Erase a few small rectangles to mimic leaf occlusion."""
+    def _erase(imgs):
+        shape = tf.shape(imgs)
+        h = shape[1]
+        w = shape[2]
+        result = imgs
+        num_patches = tf.random.uniform([], 1, max_patches + 1, dtype=tf.int32)
+        for patch_idx in range(max_patches):
+            current = result
+
+            def apply_patch():
+                ph = tf.random.uniform([], 10, h // 5, dtype=tf.int32)
+                pw = tf.random.uniform([], 10, w // 5, dtype=tf.int32)
+                py = tf.random.uniform([], 0, h - ph, dtype=tf.int32)
+                px = tf.random.uniform([], 0, w - pw, dtype=tf.int32)
+                pad_mask = tf.pad(
+                    tf.zeros([1, ph, pw, 3]),
+                    [[0, 0], [py, h - py - ph], [px, w - px - pw], [0, 0]],
+                    constant_values=1.0,
+                )
+                return current * pad_mask
+
+            result = tf.cond(
+                tf.constant(patch_idx, dtype=tf.int32) < num_patches,
+                apply_patch,
+                lambda current=current: current,
+            )
+        return result
+
+    return tf.cond(tf.random.uniform([]) < 0.15, lambda: _erase(images), lambda: images)
+
+
+def augment_and_preprocess(images, labels):
     images = augment(images, training=True)
-    images, labels = mixup(images, labels)
-    # Normalize [0, 255] -> [-1, 1] after augmentation
+    images = random_motion_blur(images)
+    images = random_shadow(images)
+    images = random_erasing(images)
+    images = tf.clip_by_value(images, 0.0, 255.0)
     images = tf.keras.applications.mobilenet_v3.preprocess_input(images)
     return images, labels
 
 
 def preprocess_ds(images, labels):
-    """Apply MobileNetV3 preprocessing: [0, 255] -> [-1, 1]."""
     images = tf.keras.applications.mobilenet_v3.preprocess_input(images)
     return images, labels
 
 
 def compute_class_weights(train_dir, class_names):
+    """Compute class weights from real training files when available."""
     counts = {}
+    class_files = {}
+
     for i, cls in enumerate(class_names):
         cls_dir = os.path.join(train_dir, cls)
-        n = len([f for f in os.listdir(cls_dir) if not f.startswith(".")])
-        counts[i] = n
+        files = [f for f in os.listdir(cls_dir) if not f.startswith(".")]
+        class_files[i] = files
+
+    use_real_only = all(
+        any("_train_real_" in file_name for file_name in files)
+        for files in class_files.values()
+    )
+
+    for idx in range(len(class_names)):
+        files = class_files[idx]
+        if use_real_only:
+            count = sum("_train_real_" in file_name for file_name in files)
+        else:
+            count = len(files)
+        counts[idx] = max(count, 1)
+
     total = sum(counts.values())
-    n_classes = len(counts)
-    weights = {}
-    for idx, count in counts.items():
-        weights[idx] = total / (n_classes * count)
+    weights = {
+        idx: total / (len(class_names) * count)
+        for idx, count in counts.items()
+    }
+
+    source = "real-only train files" if use_real_only else "all train files"
+    print(f"\nClass weights source: {source}")
+    for idx, cls in enumerate(class_names):
+        print(f"  {cls}: {counts[idx]} samples -> weight {weights[idx]:.3f}")
+    print()
     return weights
 
 
-def export_tflite():
-    """Export the best .keras checkpoint to TFLite."""
-    print(f"\nLoading best checkpoint: {FINAL_KERAS}")
-    model = tf.keras.models.load_model(
-        FINAL_KERAS,
-        custom_objects={"WarmupCosineDecay": WarmupCosineDecay},
+def build_classifier_model(base_weights="imagenet"):
+    """Build the MobileNetV3Large classifier without baking training=False."""
+    base = tf.keras.applications.MobileNetV3Large(
+        input_shape=(IMG_SIZE, IMG_SIZE, 3),
+        include_top=False,
+        weights=base_weights,
     )
+    base.trainable = False
+
+    inputs = tf.keras.Input(shape=(IMG_SIZE, IMG_SIZE, 3))
+    x = base(inputs)
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dropout(0.3)(x)
+    outputs = layers.Dense(5, activation="softmax")(x)
+    model = tf.keras.Model(inputs, outputs)
+    return model, base
+
+
+def load_model_for_resume(model_path):
+    """Rebuild the classifier graph so resumed fine-tuning can update it."""
+    errors = []
+
+    try:
+        saved_model = tf.keras.models.load_model(model_path, compile=False)
+        model, base = build_classifier_model(base_weights=None)
+        model.set_weights(saved_model.get_weights())
+        print(f"Loaded checkpoint via full-model deserialization: {model_path}")
+        return model, base
+    except Exception as exc:
+        errors.append(f"{model_path} (full model): {type(exc).__name__}")
+
+    h5_path = FINAL_H5 if os.path.exists(FINAL_H5) else model_path
+    if h5_path.endswith(".h5") and os.path.exists(h5_path):
+        try:
+            model, base = build_classifier_model(base_weights=None)
+            model.load_weights(h5_path, by_name=True, skip_mismatch=False)
+            print(f"Loaded checkpoint via H5 weight fallback: {h5_path}")
+            return model, base
+        except Exception as exc:
+            errors.append(f"{h5_path} (weights fallback): {type(exc).__name__}")
+
+    joined = "\n".join(f"  - {err}" for err in errors)
+    raise RuntimeError(f"Could not load a compatible resume checkpoint.\n{joined}")
+
+
+def export_tflite():
+    """Export the best checkpoint to TFLite."""
+    model_path = resolve_model_path()
+    print(f"\nLoading best checkpoint: {model_path}")
+    model, _ = load_model_for_resume(model_path)
 
     print("Converting to TFLite...")
-    # Save to SavedModel in system temp dir to avoid OneDrive file locks
     import shutil
     import tempfile
+
     saved_model_dir = os.path.join(tempfile.gettempdir(), "tomoleafnet_saved_model")
     if os.path.exists(saved_model_dir):
         shutil.rmtree(saved_model_dir)
@@ -152,11 +274,10 @@ def export_tflite():
 
 def resume_training():
     """Load checkpoint and continue Stage 3 training."""
-
-    # ── Load datasets ────────────────────────────────────────────────
     train_ds = tf.keras.utils.image_dataset_from_directory(
         os.path.join(FIELD_DATA_DIR, "train"),
         image_size=(IMG_SIZE, IMG_SIZE),
+        crop_to_aspect_ratio=True,
         batch_size=BATCH_SIZE,
         label_mode="categorical",
         seed=SEED,
@@ -166,49 +287,43 @@ def resume_training():
     val_ds = tf.keras.utils.image_dataset_from_directory(
         os.path.join(FIELD_DATA_DIR, "val"),
         image_size=(IMG_SIZE, IMG_SIZE),
+        crop_to_aspect_ratio=True,
         batch_size=BATCH_SIZE,
         label_mode="categorical",
         seed=SEED,
         shuffle=False,
     )
 
-    class_names = train_ds.class_names
-    print(f"Class names: {class_names}")
+    print(f"Class names: {train_ds.class_names}")
 
-    class_weights = compute_class_weights(
-        os.path.join(FIELD_DATA_DIR, "train"), class_names
-    )
-
-    AUTOTUNE = tf.data.AUTOTUNE
+    autotune = tf.data.AUTOTUNE
     train_ds_aug = train_ds.map(
-        augment_and_mixup, num_parallel_calls=AUTOTUNE
-    ).prefetch(AUTOTUNE)
-    val_ds = val_ds.map(preprocess_ds, num_parallel_calls=AUTOTUNE).prefetch(AUTOTUNE)
+        augment_and_preprocess,
+        num_parallel_calls=autotune,
+    ).prefetch(autotune)
+    val_ds = val_ds.map(preprocess_ds, num_parallel_calls=autotune).prefetch(autotune)
+    class_weights = compute_class_weights(os.path.join(FIELD_DATA_DIR, "train"), train_ds.class_names)
 
     steps_per_epoch = len(train_ds)
 
-    # ── Load best checkpoint ─────────────────────────────────────────
-    print(f"\nLoading checkpoint: {FINAL_KERAS}")
-    model = tf.keras.models.load_model(
-        FINAL_KERAS,
-        custom_objects={"WarmupCosineDecay": WarmupCosineDecay},
-    )
+    model_path = resolve_model_path()
+    print(f"\nLoading checkpoint: {model_path}")
+    model, base = load_model_for_resume(model_path)
 
-    # Ensure all layers are trainable (Stage 3 = full unfreeze)
-    for layer in model.layers:
-        layer.trainable = True
-        if isinstance(layer, tf.keras.Model):
-            for sub_layer in layer.layers:
-                sub_layer.trainable = True
+    for layer in base.layers:
+        layer.trainable = not isinstance(layer, tf.keras.layers.BatchNormalization)
 
-    # Quick validation to confirm starting accuracy
     print("\nValidating checkpoint accuracy...")
-    val_loss, val_acc = model.evaluate(val_ds, verbose=1)
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
+        loss=tf.keras.losses.CategoricalCrossentropy(),
+        metrics=["accuracy"],
+    )
+    _, val_acc = model.evaluate(val_ds, verbose=1)
     print(f"Checkpoint val accuracy: {val_acc:.4f}")
 
-    # ── Recompile with fresh cosine decay LR ─────────────────────────
     total_steps = steps_per_epoch * RESUME_EPOCHS
-    warmup_steps = steps_per_epoch * 2  # 2-epoch warmup
+    warmup_steps = steps_per_epoch * 2
 
     lr_schedule = WarmupCosineDecay(
         base_lr=1e-5,
@@ -223,14 +338,18 @@ def resume_training():
         metrics=["accuracy"],
     )
 
-    # ── Train ────────────────────────────────────────────────────────
     os.makedirs(RESULTS_DIR, exist_ok=True)
+    checkpoint_path = FINAL_H5
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor="val_loss", patience=12, restore_best_weights=True, verbose=1,
         ),
         tf.keras.callbacks.ModelCheckpoint(
-            FINAL_KERAS, monitor="val_accuracy", save_best_only=True, verbose=1,
+            checkpoint_path,
+            monitor="val_accuracy",
+            save_best_only=True,
+            save_weights_only=False,
+            verbose=1,
         ),
         tf.keras.callbacks.CSVLogger(CSV_LOG_PATH, append=False),
     ]
@@ -244,12 +363,21 @@ def resume_training():
         class_weight=class_weights,
     )
 
-    # ── Results ──────────────────────────────────────────────────────
+    best_model = tf.keras.models.load_model(checkpoint_path, compile=False)
+    try:
+        best_model.save(FINAL_KERAS)
+    except ValueError as exc:
+        if "not supported with the native Keras format" not in str(exc):
+            raise
+        print(
+            "Native .keras export is not supported in this environment. "
+            f"Keeping the compatible H5 checkpoint instead: {FINAL_H5}"
+        )
+
     best_val_acc = max(history.history["val_accuracy"])
     print(f"\nBest val accuracy this run: {best_val_acc:.4f}")
     print(f"Final val accuracy:        {history.history['val_accuracy'][-1]:.4f}")
 
-    # ── Export TFLite ────────────────────────────────────────────────
     export_tflite()
 
 

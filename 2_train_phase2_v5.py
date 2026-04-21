@@ -1,25 +1,27 @@
 """
-2_train_phase2.py — Phase 2: Fine-Tuning on Field Dataset
+2_train_phase2_v5.py — Phase 2: Fine-Tuning on Field Dataset (v5)
 
-Loads the Phase 1 warm-up model and fine-tunes MobileNetV3Large on the real
-field dataset using progressive unfreezing across 3 stages.
-
-  - Mixup alpha 0.1
-  - 3-stage progressive unfreeze: last 30 → last 60 → all layers
-  - Stage 1: 20 epochs for stabilization
-  - Total epochs: 85 (20 + 20 + 45)
+v5 improvements over v4:
+  - Fixed: Mixup uses proper Beta(alpha,alpha) distribution via two Gamma draws
+    (v4 used single Gamma which could produce lambda > 1.0, causing loss spikes)
+  - Fixed: horizontal-only flip (leaves have natural orientation)
+  - Added: label smoothing 0.1 (reduces overconfidence on noisy synthetic data)
+  - Added: frozen BatchNorm during all unfreeze stages
+  - Moderate augmentation (between v4's aggressive and the failed toned-down attempt)
+  - Added: ReduceLROnPlateau as backup LR reducer alongside cosine schedule
 
 Prerequisites:
     - Run 0_augment_field_dataset.py first (creates DATA-SPLIT/target_field/)
     - Run 1_train_phase1.py first (creates MODEL/phase1_base.keras)
 
 Outputs:
-    - MODEL/tomoleafnet_v4_final.keras
-    - MODEL/tomoleafnet_v4.tflite (DEFAULT optimization)
-    - RESULTS/Phase2_Curves.png
+    - MODEL/tomoleafnet_v5_final.keras
+    - MODEL/tomoleafnet_v5.tflite (DEFAULT optimization)
+    - RESULTS/Phase2_Curves_v5.png
+    - RESULTS/Phase2_History_v5.csv
 
 Usage:
-    python 2_train_phase2.py
+    python 2_train_phase2_v5.py
 """
 
 import math
@@ -34,12 +36,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FIELD_DATA_DIR = os.path.join(BASE_DIR, "DATA-SPLIT", "target_field")
 PHASE1_MODEL = os.path.join(BASE_DIR, "MODEL", "phase1_base.keras")
 PHASE1_MODEL_H5 = PHASE1_MODEL.replace(".keras", ".h5")
-FINAL_KERAS = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v4_final.keras")
+FINAL_KERAS = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v5_final.keras")
 FINAL_H5 = FINAL_KERAS.replace(".keras", ".h5")
-FINAL_TFLITE = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v4.tflite")
+FINAL_TFLITE = os.path.join(BASE_DIR, "MODEL", "tomoleafnet_v5.tflite")
 RESULTS_DIR = os.path.join(BASE_DIR, "RESULTS")
-CURVES_PATH = os.path.join(RESULTS_DIR, "Phase2_Curves.png")
-CSV_LOG_PATH = os.path.join(RESULTS_DIR, "Phase2_History.csv")
+CURVES_PATH = os.path.join(RESULTS_DIR, "Phase2_Curves_v5.png")
+CSV_LOG_PATH = os.path.join(RESULTS_DIR, "Phase2_History_v5.csv")
 
 IMG_SIZE = 224
 BATCH_SIZE = 32
@@ -51,19 +53,60 @@ STAGE2_EPOCHS = 20   # Last 60 layers
 STAGE3_EPOCHS = 45   # Full model
 TOTAL_EPOCHS = STAGE1_EPOCHS + STAGE2_EPOCHS + STAGE3_EPOCHS  # 85
 
-# Mixup alpha (reduced from 0.2 for less noise)
-MIXUP_ALPHA = 0.1
+MIXUP_ALPHA = 0.2
 
 # ── Augmentation (training only) ─────────────────────────────────────
+# Moderate augmentation: preserves disease textures while adding variety.
+# Horizontal-only flip (leaves have natural orientation).
 augment = tf.keras.Sequential([
-    layers.RandomFlip("horizontal_and_vertical"),
-    layers.RandomRotation(0.25),
-    layers.RandomZoom((-0.3, 0.15)),
-    layers.RandomTranslation(0.2, 0.2),
-    layers.RandomContrast(0.3),
-    layers.RandomBrightness(0.3),
-    layers.GaussianNoise(0.06),  # ~15/255, simulate mobile sensor noise
+    layers.RandomFlip("horizontal"),
+    layers.RandomRotation(0.15),
+    layers.RandomZoom((-0.2, 0.10)),
+    layers.RandomTranslation(0.15, 0.15),
+    layers.RandomContrast(0.2),
+    layers.RandomBrightness(0.2),
 ])
+
+
+# ── Extra augmentations for field-capture robustness ─────────────────
+
+def random_motion_blur(images, max_kernel=7):
+    """Simulate hand-shake / wind motion blur with a horizontal kernel."""
+    def _blur(imgs):
+        k = tf.random.uniform([], 3, max_kernel + 1, dtype=tf.int32)
+        kernel = tf.ones([1, k, 1, 1], dtype=tf.float32) / tf.cast(k, tf.float32)
+        channels = tf.split(imgs, 3, axis=-1)
+        blurred = tf.concat(
+            [tf.nn.depthwise_conv2d(c, kernel, [1, 1, 1, 1], "SAME") for c in channels],
+            axis=-1,
+        )
+        return blurred
+
+    apply = tf.random.uniform([]) < 0.15
+    return tf.cond(apply, lambda: _blur(images), lambda: images)
+
+
+def random_shadow(images):
+    """Overlay a random dark rectangle to simulate partial shade."""
+    def _shadow(imgs):
+        shape = tf.shape(imgs)
+        h, w = shape[1], shape[2]
+        y1 = tf.random.uniform([], 0.0, 0.5)
+        x1 = tf.random.uniform([], 0.0, 0.5)
+        y2 = tf.random.uniform([], y1 + 0.2, tf.minimum(y1 + 0.5, 1.0))
+        x2 = tf.random.uniform([], x1 + 0.2, tf.minimum(x1 + 0.5, 1.0))
+        darken = tf.random.uniform([], 0.5, 0.8)
+        rows = tf.cast(tf.range(h), tf.float32) / tf.cast(h, tf.float32)
+        cols = tf.cast(tf.range(w), tf.float32) / tf.cast(w, tf.float32)
+        row_mask = tf.cast((rows >= y1) & (rows < y2), tf.float32)
+        col_mask = tf.cast((cols >= x1) & (cols < x2), tf.float32)
+        mask = tf.einsum("h,w->hw", row_mask, col_mask)
+        mask = 1.0 - mask * (1.0 - darken)
+        mask = tf.reshape(mask, [1, h, w, 1])
+        return imgs * mask
+
+    apply = tf.random.uniform([]) < 0.15
+    return tf.cond(apply, lambda: _shadow(images), lambda: images)
 
 
 # ── Cosine decay with linear warmup ──────────────────────────────────
@@ -84,10 +127,8 @@ class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         warmup_steps = tf.cast(self.warmup_steps, tf.float32)
         total_steps = tf.cast(self.total_steps, tf.float32)
 
-        # Linear warmup
         warmup_lr = self.base_lr * (step / tf.maximum(warmup_steps, 1.0))
 
-        # Cosine decay
         progress = (step - warmup_steps) / tf.maximum(total_steps - warmup_steps, 1.0)
         progress = tf.minimum(progress, 1.0)
         cosine_lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (
@@ -105,13 +146,19 @@ class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         }
 
 
-# ── Mixup augmentation ───────────────────────────────────────────────
+# ── Mixup augmentation (proper Beta distribution) ────────────────────
 
 def mixup(images, labels, alpha=MIXUP_ALPHA):
-    """Apply Mixup: blend pairs of images/labels with a random ratio."""
+    """Apply Mixup with proper Beta(alpha, alpha) sampling via two Gamma draws."""
     batch_size = tf.shape(images)[0]
-    lam = tf.random.gamma(shape=[batch_size, 1, 1, 1], alpha=alpha)
-    lam = tf.maximum(lam, 1.0 - lam)
+
+    # Proper Beta(alpha, alpha) via two independent Gamma draws
+    g1 = tf.random.gamma(shape=[batch_size, 1, 1, 1], alpha=alpha)
+    g2 = tf.random.gamma(shape=[batch_size, 1, 1, 1], alpha=alpha)
+    lam = g1 / (g1 + g2 + 1e-7)  # Beta-distributed in [0, 1]
+    lam = tf.maximum(lam, 1.0 - lam)  # Ensure lambda >= 0.5
+    lam = tf.clip_by_value(lam, 0.0, 1.0)
+
     lam_labels = tf.reshape(lam, [batch_size, 1])
 
     indices = tf.random.shuffle(tf.range(batch_size))
@@ -125,10 +172,12 @@ def mixup(images, labels, alpha=MIXUP_ALPHA):
 
 
 def augment_and_mixup(images, labels):
-    """Apply spatial augmentation, Mixup, then MobileNetV3 preprocessing."""
+    """Apply augmentation, extra field augments, Mixup, then normalize."""
     images = augment(images, training=True)
+    images = random_motion_blur(images)
+    images = random_shadow(images)
+    images = tf.clip_by_value(images, 0.0, 255.0)
     images, labels = mixup(images, labels)
-    # Normalize [0, 255] -> [-1, 1] after augmentation
     images = tf.keras.applications.mobilenet_v3.preprocess_input(images)
     return images, labels
 
@@ -168,9 +217,7 @@ def get_base_model(model):
 
 
 def unfreeze_last_n_layers(base, n):
-    """Freeze all layers except the last n in the base model.
-    BatchNorm layers are always kept frozen to preserve pretrained
-    running statistics — critical when fine-tuning on a small dataset."""
+    """Freeze all layers except the last n (excluding BatchNorm)."""
     for layer in base.layers:
         layer.trainable = False
     for layer in base.layers[-n:]:
@@ -179,11 +226,21 @@ def unfreeze_last_n_layers(base, n):
 
     trainable_count = sum(1 for l in base.layers if l.trainable)
     frozen_count = sum(1 for l in base.layers if not l.trainable)
-    print(f"  Base model: {trainable_count} trainable, {frozen_count} frozen (BN always frozen)")
+    print(f"  Base model: {trainable_count} trainable, {frozen_count} frozen (BN frozen)")
+
+
+def unfreeze_full_backbone(base):
+    """Unfreeze all layers except BatchNorm."""
+    for layer in base.layers:
+        layer.trainable = not isinstance(layer, tf.keras.layers.BatchNormalization)
+
+    trainable_count = sum(1 for l in base.layers if l.trainable)
+    frozen_count = sum(1 for l in base.layers if not l.trainable)
+    print(f"  Base model: {trainable_count} trainable, {frozen_count} frozen (BN frozen)")
 
 
 def compile_stage(model, base_lr, total_steps, warmup_epochs, steps_per_epoch):
-    """Compile the model with cosine decay LR for a training stage."""
+    """Compile with cosine decay LR + label smoothing."""
     warmup_steps = steps_per_epoch * warmup_epochs
     lr_schedule = WarmupCosineDecay(
         base_lr=base_lr,
@@ -193,7 +250,7 @@ def compile_stage(model, base_lr, total_steps, warmup_epochs, steps_per_epoch):
     )
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule),
-        loss=tf.keras.losses.CategoricalCrossentropy(),
+        loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
         metrics=["accuracy"],
     )
 
@@ -236,7 +293,6 @@ def train():
         num_parallel_calls=tf.data.AUTOTUNE,
     )
 
-    # Preprocess val images: [0, 255] -> [-1, 1]
     def preprocess_ds(images, labels):
         images = tf.keras.applications.mobilenet_v3.preprocess_input(images)
         return images, labels
@@ -264,11 +320,8 @@ def train():
     os.makedirs(os.path.dirname(FINAL_KERAS), exist_ok=True)
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    # Use .h5 for checkpoints to avoid Keras 3 save_model options bug,
-    # then convert to .keras at the end before TFLite export.
     h5_checkpoint = FINAL_H5
 
-    # CSVLogger persists epoch metrics to disk — survives crashes
     csv_logger = tf.keras.callbacks.CSVLogger(CSV_LOG_PATH, append=False)
 
     all_histories = []
@@ -306,7 +359,6 @@ def train():
     )
     all_histories.append(h1)
 
-    # Switch CSVLogger to append mode for remaining stages
     csv_logger = tf.keras.callbacks.CSVLogger(CSV_LOG_PATH, append=True)
 
     # ==================================================================
@@ -349,12 +401,7 @@ def train():
     print("  STAGE 3: Unfreeze full model")
     print("=" * 60)
 
-    for layer in base.layers:
-        layer.trainable = not isinstance(layer, tf.keras.layers.BatchNormalization)
-    trainable_count = sum(1 for l in base.layers if l.trainable)
-    frozen_count = sum(1 for l in base.layers if not l.trainable)
-    print(f"  Base model: {trainable_count} trainable, {frozen_count} frozen (BN always frozen)")
-
+    unfreeze_full_backbone(base)
     compile_stage(
         model,
         base_lr=1e-5,
@@ -403,7 +450,7 @@ def train():
                 label=f"Stage 1->2 (epoch {STAGE1_EPOCHS})")
     ax1.axvline(x=s2_end, color="red", linestyle="--", alpha=0.4,
                 label=f"Stage 2->3 (epoch {STAGE1_EPOCHS + STAGE2_EPOCHS})")
-    ax1.set_title("Phase 2 — Accuracy (3-Stage Progressive Unfreeze)")
+    ax1.set_title("Phase 2 v5 — Accuracy (3-Stage Progressive Unfreeze)")
     ax1.set_xlabel("Epoch")
     ax1.set_ylabel("Accuracy")
     ax1.legend(fontsize=8)
@@ -415,7 +462,7 @@ def train():
                 label=f"Stage 1->2 (epoch {STAGE1_EPOCHS})")
     ax2.axvline(x=s2_end, color="red", linestyle="--", alpha=0.4,
                 label=f"Stage 2->3 (epoch {STAGE1_EPOCHS + STAGE2_EPOCHS})")
-    ax2.set_title("Phase 2 — Loss (3-Stage Progressive Unfreeze)")
+    ax2.set_title("Phase 2 v5 — Loss (3-Stage Progressive Unfreeze)")
     ax2.set_xlabel("Epoch")
     ax2.set_ylabel("Loss")
     ax2.legend(fontsize=8)
@@ -442,7 +489,6 @@ def train():
     # ── Export TFLite ─────────────────────────────────────────────────
     print("Exporting TFLite model...")
 
-    # Save to SavedModel in system temp dir to avoid OneDrive file locks
     import shutil
     import tempfile
     saved_model_dir = os.path.join(tempfile.gettempdir(), "tomoleafnet_saved_model")

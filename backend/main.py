@@ -12,6 +12,7 @@ Usage:
 """
 
 import os
+import re
 from contextlib import asynccontextmanager
 
 import httpx
@@ -30,6 +31,14 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 GOOGLE_TRANSLATE_API_KEY = os.getenv("GOOGLE_TRANSLATE_API_KEY", "")
+
+LEGACY_DIAGNOSE_PROMPT_TEMPLATE = (
+    "You are a plant disease specialist for tomato crops in the Philippines. "
+    "A tomato leaf has been diagnosed with {disease} at {confidence}% confidence. "
+    "Provide a short, practical, step-by-step treatment guide that a Filipino "
+    "farmer can follow immediately. Format as exactly 3 to 5 numbered steps. "
+    "Keep each step concise and actionable."
+)
 
 TOMO_SYSTEM_PROMPT = """You are Tomo, a friendly and knowledgeable agricultural assistant for TomoLeafNet — a tomato leaf disease detection app built for Filipino farmers. You specialize in tomato plant health, leaf disease identification, treatment, and prevention.
 
@@ -215,6 +224,15 @@ class ChatResponse(BaseModel):
     reply: str
 
 
+class DiagnoseRequest(BaseModel):
+    disease: str
+    confidence: float
+
+
+class DiagnoseResponse(BaseModel):
+    steps: list[str]
+
+
 class TranslateRequest(BaseModel):
     texts: list[str]
     target_language: str = "tl"  # Filipino/Tagalog
@@ -322,16 +340,7 @@ async def chat(request: ChatRequest):
     }
 
     try:
-        resp = await client.post(
-            f"{GROQ_BASE_URL}/chat/completions",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json",
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = await _post_groq_chat_completion(client, payload)
         choices = data.get("choices", [])
         if not choices:
             return ChatResponse(reply="Sorry, I could not generate a response.")
@@ -339,6 +348,84 @@ async def chat(request: ChatRequest):
         if not reply:
             reply = "Sorry, I could not generate a response."
         return ChatResponse(reply=reply)
+
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=503,
+            detail="Cannot connect to Groq Cloud. Please check your internet connection.",
+        )
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="Groq took too long to respond. Please try again.",
+        )
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Groq returned an error: {e.response.text}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error: {str(e)}",
+        )
+
+
+@app.post("/diagnose", response_model=DiagnoseResponse)
+async def diagnose(request: DiagnoseRequest):
+    """
+    Legacy compatibility endpoint for older app builds that still call
+    /diagnose for server-generated treatment steps.
+    """
+    if not GROQ_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="GROQ_API_KEY is not configured on the server.",
+        )
+
+    client: httpx.AsyncClient = app.state.http_client
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a tomato plant disease treatment specialist.",
+            },
+            {
+                "role": "user",
+                "content": LEGACY_DIAGNOSE_PROMPT_TEMPLATE.format(
+                    disease=request.disease.replace("_", " "),
+                    confidence=round(request.confidence, 1),
+                ),
+            },
+        ],
+        "stream": False,
+        "temperature": 0.3,
+        "max_tokens": 280,
+    }
+
+    try:
+        data = await _post_groq_chat_completion(client, payload)
+        choices = data.get("choices", [])
+        if not choices:
+            return DiagnoseResponse(
+                steps=["Please retake the scan or ask again in Plant AI chat."]
+            )
+
+        reply = choices[0].get("message", {}).get("content", "").strip()
+        steps = _parse_numbered_steps(reply)
+        if not steps:
+            steps = [
+                line.strip("-• ").strip()
+                for line in reply.splitlines()
+                if line.strip()
+            ]
+        if len(steps) > 5:
+            steps = steps[:5]
+        if not steps:
+            steps = ["Please retake the scan or ask again in Plant AI chat."]
+
+        return DiagnoseResponse(steps=steps)
 
     except httpx.ConnectError:
         raise HTTPException(
@@ -412,6 +499,33 @@ async def translate(request: TranslateRequest):
         )
 
 
+
+
+async def _post_groq_chat_completion(
+    client: httpx.AsyncClient,
+    payload: dict,
+) -> dict:
+    resp = await client.post(
+        f"{GROQ_BASE_URL}/chat/completions",
+        json=payload,
+        headers={
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json",
+        },
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _parse_numbered_steps(text: str) -> list[str]:
+    steps: list[str] = []
+    for line in text.splitlines():
+        match = re.match(r"^\s*\d+[\.\)\:]\s*(.+)", line.strip())
+        if match:
+            step = match.group(1).strip()
+            if step:
+                steps.append(step)
+    return steps
 
 
 def _build_scan_history_block(scans: list[ScanHistoryItem]) -> str:

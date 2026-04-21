@@ -22,10 +22,12 @@ python 0_augment_field_dataset.py
 python 1_train_phase1.py
 
 # Step 2: Phase 2 fine-tune on field dataset + export TFLite
-python 2_train_phase2.py
+python 2_train_phase2.py        # v4 (86.53% baseline)
+python 2_train_phase2_v5.py     # v5 (improved: proper Mixup, label smoothing, frozen BN)
 
 # Step 3: Evaluate on unseen field test set
-python 3_evaluate_metrics.py
+python 3_evaluate_metrics.py      # Evaluates v4 model
+python 3_evaluate_metrics_v5.py   # Evaluates v5 model
 ```
 
 ### Legacy Scripts (SCRIPTS/ — v3, kept for reference)
@@ -109,7 +111,7 @@ The mobile application utilizes a highly customized, premium high-fidelity desig
 ## Key Technical Details
 
 - The v4 model uses MobileNetV3Large (no custom layers like SpatialAttention/TransformerBlock from v3).
-- **Preprocessing is NOT embedded in the model graph.** MobileNetV3 normalization ([0,255] → [-1,1]) is applied in the dataset pipeline during training and explicitly in Flutter's `tflite_service.dart` (`pixel / 127.5 - 1.0`). This prevents TFLite conversion from silently stripping the preprocessing layer.
+- **Preprocessing IS embedded in the model graph.** MobileNetV3Large includes a built-in `Rescaling` layer that normalizes [0,255] → [-1,1]. `tf.keras.applications.mobilenet_v3.preprocess_input` is a no-op (unlike MobileNetV2). The TFLite model inherits this Rescaling layer, so Flutter's `tflite_service.dart` feeds raw [0,255] pixel values — do NOT manually normalize.
 - Two-phase transfer learning: Phase 1 (frozen base on public data, 15 epochs) → Phase 2 (3-stage progressive unfreeze on field data: last 30 → last 60 → all layers, 85 total epochs).
 - Phase 2 uses Mixup augmentation (alpha=0.1), class weights, GaussianNoise(15.0), and cosine LR with warmup. No label smoothing (Mixup already regularizes).
 - CSVLogger writes epoch metrics to `RESULTS/Phase2_History.csv` — survives training crashes.

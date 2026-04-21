@@ -468,7 +468,6 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
 
   bool get _canShowGradCamButton {
     if (_isLoading || _result == null) return false;
-    if (_result!.label == 'Healthy') return false;
     return widget.imagePath != null || _historyImageUrl != null;
   }
 
@@ -1741,6 +1740,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                   _buildIdentifyCompareTab(
                     isDark: isDark,
                     label: result.displayName,
+                    rawLabel: result.label,
                   ),
                 const SizedBox(height: 18),
                 _buildRatingAndContributionSection(isDark),
@@ -2147,7 +2147,10 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   Widget _buildIdentifyCompareTab({
     required bool isDark,
     required String label,
+    required String rawLabel,
   }) {
+    final assetPaths = _compareAssetPathsForLabel(rawLabel);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2168,8 +2171,9 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             mainAxisSpacing: 10,
             childAspectRatio: 0.92,
           ),
-          itemCount: 4,
+          itemCount: assetPaths.length < 4 ? assetPaths.length : 4,
           itemBuilder: (context, index) {
+            final assetPath = assetPaths[index];
             return TomoGlassCard(
               isDark: isDark,
               radius: 18,
@@ -2178,27 +2182,53 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(18),
-                        ),
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            isDark
-                                ? const Color(0xFF12311C)
-                                : const Color(0xFFE3F4E8),
-                            isDark
-                                ? const Color(0xFF0B1710)
-                                : const Color(0xFFF8FBF8),
-                          ],
-                        ),
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(18),
                       ),
-                      child: const Center(
-                        child: Icon(Icons.eco_rounded,
-                            size: 28, color: TomoPalette.primary),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.asset(
+                            assetPath,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    isDark
+                                        ? const Color(0xFF12311C)
+                                        : const Color(0xFFE3F4E8),
+                                    isDark
+                                        ? const Color(0xFF0B1710)
+                                        : const Color(0xFFF8FBF8),
+                                  ],
+                                ),
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.eco_rounded,
+                                  size: 28,
+                                  color: TomoPalette.primary,
+                                ),
+                              ),
+                            ),
+                          ),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withOpacity(0.12),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -2268,6 +2298,21 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       default:
         return 'Fungal';
     }
+  }
+
+  List<String> _compareAssetPathsForLabel(String label) {
+    final folder = switch (label) {
+      'Early_Blight' => 'early_blight',
+      'Healthy' => 'healthy',
+      'Leaf_Miner' => 'leaf_miner',
+      'Leaf_Mold' => 'leaf_mold',
+      _ => 'healthy',
+    };
+
+    return List.generate(
+      4,
+      (index) => 'assets/disease_samples/$folder/sample_${index + 1}.jpg',
+    );
   }
 
   Map<String, String> _identifyStatsForLabel(String label) {

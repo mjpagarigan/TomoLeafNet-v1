@@ -92,6 +92,7 @@ flutter:
 
   # Assets for TFLite model and labels
   assets:
+    - assets/tomoleafnet_v5.tflite
     - assets/tomoleafnet_v4.tflite
     - assets/tomoleafnet_v4_cam.tflite
     - assets/tomoleafnet_detector.tflite
