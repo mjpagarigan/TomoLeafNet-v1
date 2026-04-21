@@ -7,7 +7,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_session.dart';
-import 'firebase_options.dart';
 import 'theme_provider.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
@@ -25,15 +24,19 @@ import 'widgets/tomo_ui.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  Object? startupError;
 
-  // Enable Firestore offline persistence
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-  );
+  try {
+    await _initializeFirebase();
+
+    // Enable Firestore offline persistence
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+    );
+  } catch (error, stackTrace) {
+    startupError = error;
+    debugPrint('Startup failed: $error\n$stackTrace');
+  }
 
   runApp(
     MultiProvider(
@@ -41,11 +44,25 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider.value(value: AppSession.instance),
       ],
-      child: const MyApp(),
+      child: MyApp(startupError: startupError),
     ),
   );
 
-  unawaited(_bootstrapDeferredServices());
+  if (startupError == null) {
+    unawaited(_bootstrapDeferredServices());
+  }
+}
+
+Future<void> _initializeFirebase() async {
+  try {
+    await Firebase.initializeApp();
+  } on FirebaseException catch (e) {
+    final detail = e.message ?? e.code;
+    throw StateError(
+      'Firebase is not configured for this app. Add the platform Firebase '
+      'config files or run flutterfire configure. Original error: $detail',
+    );
+  }
 }
 
 Future<void> _bootstrapDeferredServices() async {
@@ -66,7 +83,9 @@ Future<void> _bootstrapDeferredServices() async {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.startupError});
+
+  final Object? startupError;
 
   /// Root navigator key — exposed so background callbacks (e.g. notification
   /// taps fired from the OS) can push routes without a BuildContext.
@@ -83,8 +102,66 @@ class MyApp extends StatelessWidget {
       theme: ThemeProvider.lightTheme,
       darkTheme: ThemeProvider.darkTheme,
       themeMode: themeProvider.themeMode,
-      home: const AuthWrapper(),
+      home: startupError == null
+          ? const AuthWrapper()
+          : StartupErrorScreen(message: startupError.toString()),
       debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class StartupErrorScreen extends StatelessWidget {
+  const StartupErrorScreen({super.key, required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Startup configuration error',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'The app could not finish initializing. On iOS this usually '
+                    'means Firebase is not configured yet.',
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Add `GoogleService-Info.plist` to the iOS Runner target or '
+                    'run `flutterfire configure`, then rebuild the app.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  SelectableText(
+                    message,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

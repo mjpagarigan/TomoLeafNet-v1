@@ -38,9 +38,15 @@ target 'Runner' do
 end
 
 post_install do |installer|
+  min_ios_version = '14.0'
+
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
     target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_version
+      config.build_settings['ENABLE_MODULE_VERIFIER'] = 'NO'
+
       # Permission handler: only compile permissions the app actually uses
       config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
         '$(inherited)',
@@ -49,5 +55,114 @@ post_install do |installer|
         'PERMISSION_MICROPHONE=1',
       ]
     end
+
+    next unless target.respond_to?(:source_build_phase) && target.source_build_phase
+
+    target.source_build_phase.files.each do |build_file|
+      file_ref = build_file.file_ref
+      next unless file_ref && File.basename(file_ref.path.to_s) == 'PrivacyInfo.xcprivacy'
+
+      build_file.remove_from_project
+    end
+  end
+
+  firebase_data_encoder = File.join(
+    installer.sandbox.root.to_s,
+    'FirebaseSharedSwift',
+    'FirebaseSharedSwift',
+    'Sources',
+    'third_party',
+    'FirebaseDataEncoder',
+    'FirebaseDataEncoder.swift'
+  )
+
+  next unless File.exist?(firebase_data_encoder)
+
+  firebase_data_encoder_contents = File.read(firebase_data_encoder)
+  patched_firebase_data_encoder_contents = firebase_data_encoder_contents
+    .gsub('throws -> sending Any', 'throws -> Any')
+    .gsub(
+      'nonisolated(unsafe) fileprivate var _iso8601Formatter',
+      'fileprivate var _iso8601Formatter'
+    )
+
+  if patched_firebase_data_encoder_contents != firebase_data_encoder_contents
+    File.chmod(0o644, firebase_data_encoder)
+    File.write(firebase_data_encoder, patched_firebase_data_encoder_contents)
+  end
+
+  firebase_allocated_unfair_lock = File.join(
+    installer.sandbox.root.to_s,
+    'FirebaseCoreInternal',
+    'FirebaseCore',
+    'Internal',
+    'Sources',
+    'Utilities',
+    'FIRAllocatedUnfairLock.swift'
+  )
+
+  if File.exist?(firebase_allocated_unfair_lock)
+    firebase_allocated_unfair_lock_contents = File.read(firebase_allocated_unfair_lock)
+    patched_firebase_allocated_unfair_lock_contents = firebase_allocated_unfair_lock_contents
+      .gsub('initialState: sending State', 'initialState: State')
+
+    if patched_firebase_allocated_unfair_lock_contents != firebase_allocated_unfair_lock_contents
+      File.chmod(0o644, firebase_allocated_unfair_lock)
+      File.write(
+        firebase_allocated_unfair_lock,
+        patched_firebase_allocated_unfair_lock_contents
+      )
+    end
+  end
+
+  firebase_heartbeats_payload = File.join(
+    installer.sandbox.root.to_s,
+    'FirebaseCoreInternal',
+    'FirebaseCore',
+    'Internal',
+    'Sources',
+    'HeartbeatLogging',
+    'HeartbeatsPayload.swift'
+  )
+
+  if File.exist?(firebase_heartbeats_payload)
+    firebase_heartbeats_payload_contents = File.read(firebase_heartbeats_payload)
+    patched_firebase_heartbeats_payload_contents = firebase_heartbeats_payload_contents
+      .gsub('internal import GoogleUtilities_NSData', 'import GoogleUtilities_NSData')
+      .gsub('internal import GoogleUtilities', 'import GoogleUtilities')
+
+    if patched_firebase_heartbeats_payload_contents != firebase_heartbeats_payload_contents
+      File.chmod(0o644, firebase_heartbeats_payload)
+      File.write(
+        firebase_heartbeats_payload,
+        patched_firebase_heartbeats_payload_contents
+      )
+    end
+  end
+
+  Dir.glob(File.join(installer.sandbox.root.to_s, 'Firebase*', '**', '*.swift')).each do |swift_file|
+    swift_file_contents = File.read(swift_file)
+    patched_swift_file_contents = swift_file_contents
+      .gsub(/\bnonisolated\(unsafe\)\s+/, '')
+      .gsub(/->\s+sending\s+/, '-> ')
+      .gsub(/:\s+sending\s+/, ': ')
+      .gsub(/throws\([^)]+\)/, 'throws')
+      .gsub(
+        'throw .failedToParseWrappedNumber(',
+        'throw Error.failedToParseWrappedNumber('
+      )
+      .gsub(
+        '@objc(callWithObject:completion:) open func call(',
+        '@objc(callWithObject:completion:) open func __callWithObject('
+      )
+      .gsub(
+        /^(\s*)(?:internal|public|package|private|fileprivate)\s+import\s+/,
+        '\1import '
+      )
+
+    next if patched_swift_file_contents == swift_file_contents
+
+    File.chmod(0o644, swift_file)
+    File.write(swift_file, patched_swift_file_contents)
   end
 end
