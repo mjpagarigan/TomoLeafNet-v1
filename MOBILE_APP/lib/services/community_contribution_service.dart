@@ -35,7 +35,7 @@ class CommunityContributionService {
       CommunityContributionService._internal();
 
   static const String _queueKey = 'communityContributionRetryQueue';
-  static const String _modelVersion = 'tomoleafnet_v5';
+  static const String _modelVersion = 'tomoleafnet_v6';
 
   final _connectivity = Connectivity();
   final _firestoreService = FirestoreService();

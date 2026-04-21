@@ -23,11 +23,13 @@ python 1_train_phase1.py
 
 # Step 2: Phase 2 fine-tune on field dataset + export TFLite
 python 2_train_phase2.py        # v4 (86.53% baseline)
-python 2_train_phase2_v5.py     # v5 (improved: proper Mixup, label smoothing, frozen BN)
+python 2_train_phase2_v5.py     # v5 (proper Mixup, label smoothing, frozen BN)
+python 2_train_phase2_v6.py     # v6 (fix: no preprocess_input, balanced Healthy, improved Leaf_Miner)
 
 # Step 3: Evaluate on unseen field test set
 python 3_evaluate_metrics.py      # Evaluates v4 model
 python 3_evaluate_metrics_v5.py   # Evaluates v5 model
+python 3_evaluate_metrics_v6.py   # Evaluates v6 model
 ```
 
 ### Legacy Scripts (SCRIPTS/ — v3, kept for reference)

@@ -40,7 +40,7 @@ class TFLiteService {
 
   /// Load the TFLite model and class labels from assets.
   Future<void> loadModel() async {
-    _interpreter = await Interpreter.fromAsset('assets/tomoleafnet_v5.tflite');
+    _interpreter = await Interpreter.fromAsset('assets/tomoleafnet_v6.tflite');
 
     final inputTensor = _interpreter!.getInputTensors()[0];
     final outputTensor = _interpreter!.getOutputTensors()[0];

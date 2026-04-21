@@ -200,16 +200,10 @@ def main():
 
     print()
     print("-- Summary --")
-    num_real = {
-        "Early_Blight": 377,
-        "Healthy": 902,
-        "Leaf_Miner": 560,
-        "Leaf_Mold": 386,
-        "Not_Tomato": 500,
-    }
     for cls in CLASS_NAMES:
-        real = num_real.get(cls, 0)
-        synth = TARGET_PER_CLASS - real
+        raw_folder = os.path.join(FIELD_RAW_DIR, cls)
+        real = len(list_images(raw_folder)) if os.path.isdir(raw_folder) else 0
+        synth = max(0, TARGET_PER_CLASS - real)
         print(f"  {cls:15s}: {real} real + {synth} synthetic = {TARGET_PER_CLASS} total")
 
     print(f"\n  Split complete: train={total_train} | val={total_val} | test={total_test}")
