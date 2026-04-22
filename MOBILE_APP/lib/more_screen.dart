@@ -8,6 +8,7 @@ import 'models/user_model.dart';
 import 'services/firestore_service.dart';
 import 'theme_provider.dart';
 import 'services/auth_service.dart';
+import 'services/tflite_service.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'widgets/guided_onboarding_tutorial.dart';
@@ -25,6 +26,8 @@ class MoreScreen extends StatelessWidget {
     final isGuest = session.isGuest;
     final user = FirebaseAuth.instance.currentUser;
     final firestoreService = FirestoreService();
+    final tfliteService = TFLiteService();
+    final modelSelectionFuture = tfliteService.initializeModelSelection();
 
     return Scaffold(
       backgroundColor: isDark ? TomoPalette.bg : TomoPalette.lightBg,
@@ -332,6 +335,66 @@ class MoreScreen extends StatelessWidget {
 
               const SizedBox(height: 28),
 
+              _buildSectionHeader('AI Model', theme),
+              const SizedBox(height: 12),
+              FutureBuilder<void>(
+                future: modelSelectionFuture,
+                builder: (context, snapshot) {
+                  return ValueListenableBuilder<TFLiteModelSpec>(
+                    valueListenable: TFLiteService.selectedModelListenable,
+                    builder: (context, selectedModel, _) {
+                      return _buildSettingsCard(
+                        theme: theme,
+                        isDark: isDark,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Choose the scan model',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'New Identify and Diagnose scans will use the model you pick here.',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 13,
+                                    height: 1.5,
+                                    color: theme.colorScheme.onSurface
+                                        .withAlpha(140),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Divider(
+                            color: theme.colorScheme.onSurface.withAlpha(20),
+                            height: 1,
+                          ),
+                          ...TFLiteService.availableModels.map(
+                            (model) => _buildModelChoiceRow(
+                              context: context,
+                              theme: theme,
+                              isDark: isDark,
+                              model: model,
+                              isSelected: selectedModel.id == model.id,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+
+              const SizedBox(height: 28),
+
               // --- General Section (Tutorial) ---
               _buildSectionHeader('General', theme),
               const SizedBox(height: 12),
@@ -365,28 +428,40 @@ class MoreScreen extends StatelessWidget {
               // --- About Section ---
               _buildSectionHeader('About', theme),
               const SizedBox(height: 12),
-              _buildSettingsCard(
-                theme: theme,
-                isDark: isDark,
-                children: [
-                  _buildInfoRow(theme, 'App Name', 'TomoLeafNet'),
-                  Divider(
-                      color: theme.colorScheme.onSurface.withAlpha(20),
-                      height: 1),
-                  _buildInfoRow(theme, 'Version', '1.0.0'),
-                  Divider(
-                      color: theme.colorScheme.onSurface.withAlpha(20),
-                      height: 1),
-                  _buildInfoRow(theme, 'Model', 'TomoLeafNet v4 MobileNetV3'),
-                  Divider(
-                      color: theme.colorScheme.onSurface.withAlpha(20),
-                      height: 1),
-                  _buildInfoRow(theme, 'Classes', '5 tomato leaf conditions'),
-                  Divider(
-                      color: theme.colorScheme.onSurface.withAlpha(20),
-                      height: 1),
-                  _buildClassDescriptions(theme, isDark),
-                ],
+              FutureBuilder<void>(
+                future: modelSelectionFuture,
+                builder: (context, snapshot) {
+                  return ValueListenableBuilder<TFLiteModelSpec>(
+                    valueListenable: TFLiteService.selectedModelListenable,
+                    builder: (context, selectedModel, _) {
+                      return _buildSettingsCard(
+                        theme: theme,
+                        isDark: isDark,
+                        children: [
+                          _buildInfoRow(theme, 'App Name', 'TomoLeafNet'),
+                          Divider(
+                              color: theme.colorScheme.onSurface.withAlpha(20),
+                              height: 1),
+                          _buildInfoRow(theme, 'Version', '1.0.0'),
+                          Divider(
+                              color: theme.colorScheme.onSurface.withAlpha(20),
+                              height: 1),
+                          _buildInfoRow(
+                              theme, 'Active Model', selectedModel.displayName),
+                          Divider(
+                              color: theme.colorScheme.onSurface.withAlpha(20),
+                              height: 1),
+                          _buildInfoRow(
+                              theme, 'Classes', '5 tomato leaf conditions'),
+                          Divider(
+                              color: theme.colorScheme.onSurface.withAlpha(20),
+                              height: 1),
+                          _buildClassDescriptions(theme, isDark),
+                        ],
+                      );
+                    },
+                  );
+                },
               ),
 
               // --- Sign Out ---
@@ -707,6 +782,78 @@ class MoreScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildModelChoiceRow({
+    required BuildContext context,
+    required ThemeData theme,
+    required bool isDark,
+    required TFLiteModelSpec model,
+    required bool isSelected,
+  }) {
+    return ListTile(
+      onTap: () => _selectModel(context, model),
+      leading: Icon(
+        isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: isSelected ? const Color(0xFF3CB45A) : theme.iconTheme.color,
+      ),
+      title: Text(
+        model.displayName,
+        style: GoogleFonts.dmSans(
+          fontWeight: FontWeight.w700,
+          color: theme.colorScheme.onSurface,
+        ),
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          model.description +
+              (model.supportsHeatmap
+                  ? ' Heatmap is available.'
+                  : ' Heatmap is currently unavailable for this model.'),
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
+            height: 1.45,
+            color: theme.colorScheme.onSurface.withAlpha(130),
+          ),
+        ),
+      ),
+      trailing: isSelected
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF3CB45A).withAlpha(40)
+                    : const Color(0xFF3CB45A).withAlpha(24),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'Current',
+                style: GoogleFonts.dmSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF3CB45A),
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+
+  Future<void> _selectModel(
+    BuildContext context,
+    TFLiteModelSpec model,
+  ) async {
+    await TFLiteService().setActiveModel(model.id);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${model.displayName} will be used for new scans.',
+          style: GoogleFonts.dmSans(),
+        ),
       ),
     );
   }

@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firestore_service.dart';
 import 'storage_service.dart';
+import 'tflite_service.dart';
 
 class ContributionUploadResult {
   final String contributionId;
@@ -35,8 +36,6 @@ class CommunityContributionService {
       CommunityContributionService._internal();
 
   static const String _queueKey = 'communityContributionRetryQueue';
-  static const String _modelVersion = 'tomoleafnet_v6';
-
   final _connectivity = Connectivity();
   final _firestoreService = FirestoreService();
   final _storageService = StorageService();
@@ -76,6 +75,7 @@ class CommunityContributionService {
     required String? localImagePath,
     String? remoteImageUrl,
     GeoPoint? gpsCoordinates,
+    String? modelVersion,
     void Function(double progress)? onProgress,
   }) async {
     final contributionId = FirebaseFirestore.instance
@@ -103,7 +103,7 @@ class CommunityContributionService {
       'thresholdState': thresholdState,
       'region': region,
       'appVersion': appVersion,
-      'modelVersion': _modelVersion,
+      'modelVersion': modelVersion ?? TFLiteService().currentModelVersion,
     };
 
     try {
@@ -139,7 +139,8 @@ class CommunityContributionService {
     _isProcessingQueue = true;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final queue = List<String>.from(prefs.getStringList(_queueKey) ?? const []);
+      final queue =
+          List<String>.from(prefs.getStringList(_queueKey) ?? const []);
       if (queue.isEmpty) return;
 
       final remaining = <String>[];
@@ -187,7 +188,8 @@ class CommunityContributionService {
     await subscription?.cancel();
 
     final imageStoragePath = snapshot.ref.fullPath;
-    final downloadUrl = await _storageService.tryGetDownloadUrl(imageStoragePath);
+    final downloadUrl =
+        await _storageService.tryGetDownloadUrl(imageStoragePath);
 
     await _firestoreService.createCommunityContribution(
       contributionId: payload['contributionId'],

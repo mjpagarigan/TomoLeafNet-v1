@@ -53,6 +53,7 @@ class FirestoreService {
     GeoPoint? gpsCoordinates,
     double? secondConfidence,
     String? thresholdState,
+    String? modelVersion,
     List<String>? treatmentSteps,
     String? userRating,
     String? contributionId,
@@ -72,6 +73,7 @@ class FirestoreService {
       secondConfidence: secondConfidence,
       confidenceLabel: confidenceLabel,
       thresholdState: thresholdState,
+      modelVersion: modelVersion,
       timestamp: DateTime.now(),
       gpsCoordinates: gpsCoordinates,
       scanType: scanType,
@@ -252,7 +254,7 @@ class FirestoreService {
 
     await _firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(docRef);
-      final data = snapshot.data() as Map<String, dynamic>?;
+      final data = snapshot.data();
       final currentStatus = data?['correctionRequestStatus']?.toString();
 
       if (currentStatus == 'pending') {

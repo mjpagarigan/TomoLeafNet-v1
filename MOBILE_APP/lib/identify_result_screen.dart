@@ -99,6 +99,16 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   bool get _isHistory => widget.historyScan != null;
   bool get _isGuest => AppSession.instance.isGuest;
   String? get _historyImageUrl => widget.historyScan?.previewImageUrl;
+  String get _effectiveModelVersion {
+    final savedModelVersion = widget.historyScan?.modelVersion;
+    if (savedModelVersion != null && savedModelVersion.isNotEmpty) {
+      return savedModelVersion;
+    }
+    return _tfliteService.currentModelVersion;
+  }
+
+  String get _effectiveModelDisplayName =>
+      TFLiteService.getModelDisplayName(_effectiveModelVersion);
 
   @override
   void initState() {
@@ -250,6 +260,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         secondConfidence: _result!.secondConfidence,
         confidenceLabel: _result!.confidenceLabel,
         thresholdState: _result!.thresholdState,
+        modelVersion: _tfliteService.currentModelVersion,
         scanType: 'identify',
         gpsCoordinates: gpsCoordinates,
       );
@@ -468,6 +479,14 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
 
   bool get _canShowGradCamButton {
     if (_isLoading || _result == null) return false;
+    if (!_tfliteService.supportsHeatmap) return false;
+    if (_isHistory &&
+        widget.historyScan?.modelVersion != null &&
+        widget.historyScan!.modelVersion!.isNotEmpty &&
+        widget.historyScan!.modelVersion !=
+            _tfliteService.currentModelVersion) {
+      return false;
+    }
     return widget.imagePath != null || _historyImageUrl != null;
   }
 
@@ -843,6 +862,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         thresholdState: _result!.thresholdState,
         localImagePath: widget.imagePath,
         remoteImageUrl: _savedImageUrl ?? _historyImageUrl,
+        modelVersion: widget.historyScan?.modelVersion ??
+            _tfliteService.currentModelVersion,
         gpsCoordinates:
             _savedGpsCoordinates ?? widget.historyScan?.gpsCoordinates,
         onProgress: (progress) {
@@ -1576,9 +1597,13 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       result.label,
       isFilipino: _isFilipino,
     );
+    final localizedResultName = _localizedResultDisplayName(result.label);
     final info = _getDiseaseInfo(result.label, _isFilipino);
     final summaryDescription = guide?.description ?? info['description'] ?? '';
-    final symptoms = _symptomSectionsForLabel(result.label);
+    final symptoms = _symptomSectionsForLabel(
+      result.label,
+      isFilipino: _isFilipino,
+    );
     final stats = _identifyStatsForLabel(result.label);
     final bannerColor = result.label == 'Healthy'
         ? const Color(0xFF24C55E)
@@ -1713,9 +1738,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 const SizedBox(height: 18),
                 _buildResultHeroHeader(
                   isDark: isDark,
-                  bannerText: result.label == 'Healthy'
-                      ? '${result.displayName.toUpperCase()} CONFIRMED'
-                      : '${result.displayName.toUpperCase()} DETECTED',
+                  bannerText: _localizedIdentifyBannerText(result.label),
                   bannerColor: bannerColor,
                 ),
                 const SizedBox(height: 20),
@@ -1724,7 +1747,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 if (_activeTab == 'summary')
                   _buildIdentifySummaryTab(
                     isDark: isDark,
-                    title: result.displayName,
+                    title: localizedResultName,
                     description: summaryDescription,
                     confidenceText: result.confidencePercent,
                     confidenceValue: result.confidence,
@@ -1739,7 +1762,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 if (_activeTab == 'compare')
                   _buildIdentifyCompareTab(
                     isDark: isDark,
-                    label: result.displayName,
+                    label: localizedResultName,
                     rawLabel: result.label,
                   ),
                 const SizedBox(height: 18),
@@ -1757,6 +1780,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     required String bannerText,
     required Color bannerColor,
   }) {
+    final modelDisplayName = _effectiveModelDisplayName;
     return SizedBox(
       height: 240,
       child: Stack(
@@ -1857,11 +1881,46 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             ),
           ),
           Positioned(
+            bottom: 38,
+            left: 18,
+            right: 18,
+            child: Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 230),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(isDark ? 0.34 : 0.22),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(isDark ? 0.12 : 0.22),
+                  ),
+                ),
+                child: Text(
+                  modelDisplayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withOpacity(0.90),
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
             bottom: 14,
             left: 0,
             right: 0,
             child: Text(
-              'scanned leaf image',
+              _isFilipino
+                  ? 'na-scan na larawan ng dahon'
+                  : 'scanned leaf image',
               textAlign: TextAlign.center,
               style: GoogleFonts.spaceMono(
                 fontSize: 10,
@@ -1897,7 +1956,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 ),
                 alignment: Alignment.center,
                 child: Text(
-                  _capitalize(tab),
+                  _localizedIdentifyTabLabel(tab),
                   style: GoogleFonts.dmSans(
                     fontSize: 13,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
@@ -1961,7 +2020,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                   SizedBox(
                     width: 84,
                     child: Text(
-                      'Confidence',
+                      _isFilipino ? 'Tiwala' : 'Confidence',
                       style: GoogleFonts.dmSans(
                         fontSize: 12,
                         color: isDark
@@ -1998,11 +2057,8 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
               Row(
                 children: [
                   TomoChip(
-                    label: _result!.confidence >= 0.8
-                        ? 'High Confidence'
-                        : _result!.confidence >= 0.6
-                            ? 'Moderate Confidence'
-                            : 'Low Confidence',
+                    label:
+                        _localizedIdentifyConfidenceBand(_result!.confidence),
                     color: _result!.confidence >= 0.6
                         ? TomoPalette.primary
                         : TomoPalette.amber,
@@ -2039,7 +2095,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    entry.key,
+                    _localizedIdentifyStatLabel(entry.key),
                     style: GoogleFonts.dmSans(
                       fontSize: 11,
                       color: isDark
@@ -2049,7 +2105,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                   ),
                   const Spacer(),
                   Text(
-                    entry.value,
+                    _localizedIdentifyStatValue(entry.value),
                     style: GoogleFonts.dmSans(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
@@ -2075,8 +2131,12 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
             ),
             child: Text(
               _result!.label == 'Healthy'
-                  ? 'View Healthy Care Guide ->'
-                  : 'Get Full Treatment Guide ->',
+                  ? (_isFilipino
+                      ? 'Tingnan ang Gabay sa Healthy Care ->'
+                      : 'View Healthy Care Guide ->')
+                  : (_isFilipino
+                      ? 'Kunin ang Buong Gabay sa Paggamot ->'
+                      : 'Get Full Treatment Guide ->'),
               style: GoogleFonts.dmSans(
                 fontSize: 15,
                 fontWeight: FontWeight.w800,
@@ -2101,7 +2161,7 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Visual Symptoms',
+            _isFilipino ? 'Mga Biswal na Sintomas' : 'Visual Symptoms',
             style: GoogleFonts.dmSans(
               fontSize: 18,
               fontWeight: FontWeight.w800,
@@ -2155,7 +2215,9 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Visually similar confirmed cases',
+          _isFilipino
+              ? 'Mga kahawig na kumpirmadong kaso'
+              : 'Visually similar confirmed cases',
           style: GoogleFonts.dmSans(
             fontSize: 13,
             color: isDark ? TomoPalette.textMuted : TomoPalette.lightTextSubtle,
@@ -2238,7 +2300,9 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Case #${index + 1}',
+                          _isFilipino
+                              ? 'Kaso #${index + 1}'
+                              : 'Case #${index + 1}',
                           style: GoogleFonts.dmSans(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -2287,14 +2351,104 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
   String _capitalize(String value) =>
       value.isEmpty ? value : '${value[0].toUpperCase()}${value.substring(1)}';
 
+  String _localizedIdentifyTabLabel(String tab) {
+    switch (tab) {
+      case 'summary':
+        return _isFilipino ? 'Buod' : 'Summary';
+      case 'symptoms':
+        return _isFilipino ? 'Sintomas' : 'Symptoms';
+      case 'compare':
+        return _isFilipino ? 'Ihambing' : 'Compare';
+      default:
+        return _capitalize(tab);
+    }
+  }
+
+  String _localizedResultDisplayName(String label) {
+    final english = TFLiteService.getDisplayName(label);
+    if (!_isFilipino) return english;
+    final translated = _translations[english];
+    if (translated != null && translated.isNotEmpty) return translated;
+    switch (label) {
+      case 'Healthy':
+        return 'Malusog';
+      case 'Not_Tomato':
+        return 'Hindi Kamatis';
+      default:
+        return english;
+    }
+  }
+
+  String _localizedIdentifyBannerText(String label) {
+    final localizedName = _localizedResultDisplayName(label).toUpperCase();
+    final suffix = label == 'Healthy'
+        ? (_isFilipino ? 'KUMPIRMADO' : 'CONFIRMED')
+        : (_isFilipino ? 'NATUKOY' : 'DETECTED');
+    return '$localizedName $suffix';
+  }
+
+  String _localizedIdentifyConfidenceBand(double confidence) {
+    if (confidence >= 0.8) {
+      return _isFilipino ? 'Mataas na Tiwala' : 'High Confidence';
+    }
+    if (confidence >= 0.6) {
+      return _isFilipino ? 'Katamtamang Tiwala' : 'Moderate Confidence';
+    }
+    return _isFilipino ? 'Mababang Tiwala' : 'Low Confidence';
+  }
+
+  String _localizedIdentifyStatLabel(String key) {
+    if (!_isFilipino) return key;
+    switch (key) {
+      case 'Severity':
+        return 'Tindi';
+      case 'Spread':
+        return 'Pagkalat';
+      case 'Treatment':
+        return 'Paggamot';
+      case 'Condition':
+        return 'Kalagayan';
+      default:
+        return key;
+    }
+  }
+
+  String _localizedIdentifyStatValue(String value) {
+    if (!_isFilipino) return value;
+    switch (value) {
+      case 'Moderate':
+        return 'Katamtaman';
+      case 'Rain Splash':
+        return 'Talsik ng Ulan';
+      case 'Insect Borne':
+        return 'Dala ng Insekto';
+      case 'Airborne':
+        return 'Dala ng Hangin';
+      case 'Stable':
+        return 'Matatag';
+      case 'None':
+        return 'Wala';
+      case 'Monitor':
+        return 'Bantayan';
+      case 'Unknown':
+        return 'Hindi Tukoy';
+      case 'Review':
+        return 'Suriin';
+      case 'Rescan':
+        return 'I-scan Muli';
+      default:
+        return value;
+    }
+  }
+
   String _categoryForLabel(String label) {
     switch (label) {
       case 'Leaf_Miner':
-        return 'Insect';
+        return _isFilipino ? 'Peste' : 'Insect';
       case 'Healthy':
-        return 'Healthy';
+        return _isFilipino ? 'Malusog' : 'Healthy';
       case 'Not_Tomato':
-        return 'Rejected';
+        return _isFilipino ? 'Tinanggihan' : 'Rejected';
       default:
         return 'Fungal';
     }
@@ -2355,75 +2509,145 @@ class _IdentifyResultScreenState extends State<IdentifyResultScreen>
     }
   }
 
-  List<MapEntry<String, String>> _symptomSectionsForLabel(String label) {
+  List<MapEntry<String, String>> _symptomSectionsForLabel(
+    String label, {
+    required bool isFilipino,
+  }) {
     switch (label) {
       case 'Leaf_Mold':
-        return const [
-          MapEntry(
-            'Upper leaf surface',
-            'Pale green or yellow spots appear, initially small and angular.',
-          ),
-          MapEntry(
-            'Underside',
-            'Olive-green to brown velvety mold develops beneath the leaf.',
-          ),
-          MapEntry(
-            'Progression',
-            'Spots enlarge, leaves yellow, then brown and eventually drop.',
-          ),
-        ];
+        return isFilipino
+            ? const [
+                MapEntry(
+                  'Itaas ng dahon',
+                  'May maputlang berde o dilaw na batik na lumilitaw, maliit at pahugis anggulo sa umpisa.',
+                ),
+                MapEntry(
+                  'Ilalim',
+                  'Nagkakaroon ng olive-green hanggang kayumangging mala-bulak na amag sa ilalim ng dahon.',
+                ),
+                MapEntry(
+                  'Paglala',
+                  'Lumalaki ang mga batik, naninilaw ang dahon, saka nangingitim at nalalaglag.',
+                ),
+              ]
+            : const [
+                MapEntry(
+                  'Upper leaf surface',
+                  'Pale green or yellow spots appear, initially small and angular.',
+                ),
+                MapEntry(
+                  'Underside',
+                  'Olive-green to brown velvety mold develops beneath the leaf.',
+                ),
+                MapEntry(
+                  'Progression',
+                  'Spots enlarge, leaves yellow, then brown and eventually drop.',
+                ),
+              ];
       case 'Early_Blight':
-        return const [
-          MapEntry(
-            'Older leaves',
-            'Dark circular spots appear first, often with concentric target-like rings.',
-          ),
-          MapEntry(
-            'Surrounding tissue',
-            'Yellow halos form around lesions as the infection spreads outward.',
-          ),
-          MapEntry(
-            'Progression',
-            'Leaves dry out, collapse, and the plant gradually defoliates.',
-          ),
-        ];
+        return isFilipino
+            ? const [
+                MapEntry(
+                  'Matatandang dahon',
+                  'Madidilim at pabilog na batik ang unang lumilitaw, madalas may target-like na magkakasunod na guhit.',
+                ),
+                MapEntry(
+                  'Paligid ng lesion',
+                  'Nagkakaroon ng dilaw na halo sa paligid ng lesion habang lumalawak ang impeksiyon.',
+                ),
+                MapEntry(
+                  'Paglala',
+                  'Natutuyo ang mga dahon, lumalambot, at unti-unting nalalagas sa halaman.',
+                ),
+              ]
+            : const [
+                MapEntry(
+                  'Older leaves',
+                  'Dark circular spots appear first, often with concentric target-like rings.',
+                ),
+                MapEntry(
+                  'Surrounding tissue',
+                  'Yellow halos form around lesions as the infection spreads outward.',
+                ),
+                MapEntry(
+                  'Progression',
+                  'Leaves dry out, collapse, and the plant gradually defoliates.',
+                ),
+              ];
       case 'Leaf_Miner':
-        return const [
-          MapEntry(
-            'Leaf trails',
-            'Thin white winding tunnels become visible inside the leaf tissue.',
-          ),
-          MapEntry(
-            'Feeding damage',
-            'Affected areas look scraped or translucent as larvae feed within the leaf.',
-          ),
-          MapEntry(
-            'Progression',
-            'Heavy infestations reduce photosynthesis and cause leaves to curl or dry.',
-          ),
-        ];
+        return isFilipino
+            ? const [
+                MapEntry(
+                  'Bakas sa dahon',
+                  'Makikita ang maninipis at mapuputing paikot-ikot na lagusan sa loob ng tisyu ng dahon.',
+                ),
+                MapEntry(
+                  'Pinsala sa pagkain',
+                  'Mukhang gasgas o maninipis ang apektadong bahagi habang kumakain ang larvae sa loob ng dahon.',
+                ),
+                MapEntry(
+                  'Paglala',
+                  'Kapag mabigat ang infestation, humihina ang photosynthesis at kumukulubot o natutuyo ang mga dahon.',
+                ),
+              ]
+            : const [
+                MapEntry(
+                  'Leaf trails',
+                  'Thin white winding tunnels become visible inside the leaf tissue.',
+                ),
+                MapEntry(
+                  'Feeding damage',
+                  'Affected areas look scraped or translucent as larvae feed within the leaf.',
+                ),
+                MapEntry(
+                  'Progression',
+                  'Heavy infestations reduce photosynthesis and cause leaves to curl or dry.',
+                ),
+              ];
       case 'Healthy':
-        return const [
-          MapEntry(
-            'Leaf color',
-            'Leaves appear evenly green without necrotic spots or unusual discoloration.',
-          ),
-          MapEntry(
-            'Surface condition',
-            'No visible mold growth, tunnels, or water-soaked lesions are present.',
-          ),
-          MapEntry(
-            'Overall plant',
-            'The canopy looks stable and disease pressure appears low at this time.',
-          ),
-        ];
+        return isFilipino
+            ? const [
+                MapEntry(
+                  'Kulay ng dahon',
+                  'Pantay na berde ang mga dahon at walang necrotic spots o kakaibang pamumuti o pangingitim.',
+                ),
+                MapEntry(
+                  'Kalagayan ng ibabaw',
+                  'Walang nakikitang amag, tunnels, o water-soaked lesions sa dahon.',
+                ),
+                MapEntry(
+                  'Kabuuang halaman',
+                  'Mukhang maayos ang canopy at mababa ang pressure ng sakit sa kasalukuyan.',
+                ),
+              ]
+            : const [
+                MapEntry(
+                  'Leaf color',
+                  'Leaves appear evenly green without necrotic spots or unusual discoloration.',
+                ),
+                MapEntry(
+                  'Surface condition',
+                  'No visible mold growth, tunnels, or water-soaked lesions are present.',
+                ),
+                MapEntry(
+                  'Overall plant',
+                  'The canopy looks stable and disease pressure appears low at this time.',
+                ),
+              ];
       default:
-        return const [
-          MapEntry(
-            'Rescan recommended',
-            'Capture the leaf again in brighter light and keep the leaf centered in the frame.',
-          ),
-        ];
+        return isFilipino
+            ? const [
+                MapEntry(
+                  'Inirerekomenda ang muling pag-scan',
+                  'Kunan muli ang dahon sa mas maliwanag na ilaw at panatilihing nasa gitna ito ng frame.',
+                ),
+              ]
+            : const [
+                MapEntry(
+                  'Rescan recommended',
+                  'Capture the leaf again in brighter light and keep the leaf centered in the frame.',
+                ),
+              ];
     }
   }
 

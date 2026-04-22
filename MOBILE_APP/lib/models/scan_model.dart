@@ -11,6 +11,7 @@ class ScanModel {
   final double? secondConfidence;
   final String confidenceLabel;
   final String? thresholdState;
+  final String? modelVersion;
   final DateTime timestamp;
   final GeoPoint? gpsCoordinates;
   final String scanType; // "identify" or "diagnose"
@@ -36,6 +37,7 @@ class ScanModel {
     this.secondConfidence,
     required this.confidenceLabel,
     this.thresholdState,
+    this.modelVersion,
     required this.timestamp,
     this.gpsCoordinates,
     this.scanType = 'identify',
@@ -64,6 +66,7 @@ class ScanModel {
       secondConfidence: (data['secondConfidence'] as num?)?.toDouble(),
       confidenceLabel: data['confidenceLabel'] ?? '',
       thresholdState: data['thresholdState'],
+      modelVersion: data['modelVersion'],
       timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
       gpsCoordinates: data['gpsCoordinates'] as GeoPoint?,
       scanType: data['scanType'] ?? 'identify', // backward compat
@@ -94,6 +97,7 @@ class ScanModel {
       'secondConfidence': secondConfidence,
       'confidenceLabel': confidenceLabel,
       'thresholdState': thresholdState,
+      'modelVersion': modelVersion,
       'timestamp': Timestamp.fromDate(timestamp),
       'gpsCoordinates': gpsCoordinates,
       'scanType': scanType,

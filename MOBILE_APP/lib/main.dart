@@ -18,6 +18,7 @@ import 'screens/reminders_screen.dart';
 import 'services/fcm_service.dart';
 import 'services/community_contribution_service.dart';
 import 'services/local_notification_service.dart';
+import 'services/tflite_service.dart';
 import 'widgets/guided_onboarding_tutorial.dart';
 import 'widgets/tomo_ui.dart';
 
@@ -68,6 +69,7 @@ Future<void> _initializeFirebase() async {
 Future<void> _bootstrapDeferredServices() async {
   await Future<void>.delayed(const Duration(milliseconds: 250));
   try {
+    await TFLiteService().initializeModelSelection();
     await LocalNotificationService.instance.init();
     LocalNotificationService.instance.onNotificationTap = (payload) {
       final navigator = MyApp.rootNavigatorKey.currentState;

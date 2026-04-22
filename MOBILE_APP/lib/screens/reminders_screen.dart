@@ -140,8 +140,7 @@ class _RemindersScreenState extends State<RemindersScreen>
                   labelColor: isDark ? Colors.white : Colors.black87,
                   unselectedLabelColor:
                       isDark ? Colors.grey[500] : Colors.grey[600],
-                  labelStyle:
-                      GoogleFonts.dmSans(fontWeight: FontWeight.bold),
+                  labelStyle: GoogleFonts.dmSans(fontWeight: FontWeight.bold),
                   tabs: const [Tab(text: 'Today'), Tab(text: 'Upcoming')],
                 ),
               ),
@@ -999,6 +998,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
   late DateTime _startDate;
   late TimeOfDay _notifyTime;
   String? _timeValidationError;
+  bool _isSaving = false;
 
   static const List<String> _waterOptions = [
     '1 cup',
@@ -1118,16 +1118,27 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
                       ),
                     ),
                     GestureDetector(
-                      onTap: _timeValidationError == null ? _onSave : null,
-                      child: Text(
-                        'Done',
-                        style: GoogleFonts.dmSans(
-                            color: _timeValidationError == null
-                                ? accent
-                                : Colors.grey,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold),
-                      ),
+                      onTap: (_timeValidationError == null && !_isSaving)
+                          ? _onSave
+                          : null,
+                      child: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: accent,
+                              ),
+                            )
+                          : Text(
+                              'Done',
+                              style: GoogleFonts.dmSans(
+                                  color: _timeValidationError == null
+                                      ? accent
+                                      : Colors.grey,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold),
+                            ),
                     ),
                   ],
                 ),
@@ -1549,6 +1560,7 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
   }
 
   Future<void> _onSave() async {
+    if (_isSaving) return;
     _validateDateTime();
     if (_timeValidationError != null) {
       setState(() {});
@@ -1557,6 +1569,8 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+
+    setState(() => _isSaving = true);
 
     final fcmToken = await FcmService.instance.ensureToken();
 
@@ -1608,11 +1622,40 @@ class _ReminderEditorSheetState extends State<_ReminderEditorSheet> {
             backgroundColor: Colors.redAccent,
           ),
         );
+        setState(() => _isSaving = false);
+      }
+      return;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to save reminder right now.',
+              style: GoogleFonts.dmSans(),
+            ),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        setState(() => _isSaving = false);
       }
       return;
     }
 
-    await LocalNotificationService.instance.scheduleForReminder(saved);
+    try {
+      await LocalNotificationService.instance.scheduleForReminder(saved);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Reminder saved, but local notification scheduling failed.',
+              style: GoogleFonts.dmSans(),
+            ),
+            backgroundColor: Colors.orangeAccent,
+          ),
+        );
+      }
+    }
 
     if (mounted) Navigator.pop(context, true);
   }

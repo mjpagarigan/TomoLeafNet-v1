@@ -136,6 +136,16 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
   String? get _historyImageUrl => widget.historyScan?.previewImageUrl;
   String? get _effectiveRemoteImageUrl =>
       _savedImageUrl ?? _historyImageUrl ?? widget.preloadedRemoteImageUrl;
+  String get _effectiveModelVersion {
+    final savedModelVersion = widget.historyScan?.modelVersion;
+    if (savedModelVersion != null && savedModelVersion.isNotEmpty) {
+      return savedModelVersion;
+    }
+    return _tfliteService.currentModelVersion;
+  }
+
+  String get _effectiveModelDisplayName =>
+      TFLiteService.getModelDisplayName(_effectiveModelVersion);
 
   @override
   void initState() {
@@ -421,6 +431,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         secondConfidence: _result!.secondConfidence,
         confidenceLabel: _result!.confidenceLabel,
         thresholdState: _result!.thresholdState,
+        modelVersion: _tfliteService.currentModelVersion,
         scanType: 'diagnose',
         gpsCoordinates: gpsCoordinates,
         treatmentSteps: _treatmentSteps,
@@ -574,6 +585,14 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
 
   bool get _canShowGradCamButton {
     if (_isDetecting || _result == null) return false;
+    if (!_tfliteService.supportsHeatmap) return false;
+    if (_isHistory &&
+        widget.historyScan?.modelVersion != null &&
+        widget.historyScan!.modelVersion!.isNotEmpty &&
+        widget.historyScan!.modelVersion !=
+            _tfliteService.currentModelVersion) {
+      return false;
+    }
     return widget.imagePath != null ||
         widget.preloadedLocalImagePath != null ||
         _historyImageUrl != null ||
@@ -954,6 +973,8 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         remoteImageUrl: _savedImageUrl ??
             widget.historyScan?.imageUrl ??
             widget.preloadedRemoteImageUrl,
+        modelVersion: widget.historyScan?.modelVersion ??
+            _tfliteService.currentModelVersion,
         gpsCoordinates:
             _savedGpsCoordinates ?? widget.historyScan?.gpsCoordinates,
         onProgress: (progress) {
@@ -1735,6 +1756,9 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
       result.label,
       isFilipino: _isFilipino,
     );
+    final localizedResultName = _localizedDiagnoseResultDisplayName(
+      result.label,
+    );
     final displayedRemedies = guide?.remedies ?? _treatmentSteps ?? const [];
     final meta = _diagnoseMetaForLabel(result.label);
     final bannerColor = result.label == 'Healthy'
@@ -1803,9 +1827,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 _buildDiagnoseHeroHeader(
                   isDark: isDark,
                   bannerColor: bannerColor,
-                  bannerText: result.label == 'Healthy'
-                      ? '${result.displayName.toUpperCase()} CONFIRMED'
-                      : '${result.displayName.toUpperCase()} DETECTED',
+                  bannerText: _localizedDiagnoseBannerText(result.label),
                 ),
                 if (widget.upgradedFromIdentify) ...[
                   const SizedBox(height: 14),
@@ -1858,7 +1880,10 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 ],
                 const SizedBox(height: 18),
                 if (result.label == 'Healthy') ...[
-                  TomoSectionLabel('HEALTHY GUIDE', isDark: isDark),
+                  TomoSectionLabel(
+                    _isFilipino ? 'GABAY SA MALUSOG NA DAHON' : 'HEALTHY GUIDE',
+                    isDark: isDark,
+                  ),
                   const SizedBox(height: 10),
                   TomoGlassCard(
                     isDark: isDark,
@@ -1912,7 +1937,10 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     ),
                   ),
                 ] else ...[
-                  TomoSectionLabel('GUIDE OVERVIEW', isDark: isDark),
+                  TomoSectionLabel(
+                    _isFilipino ? 'PANGKALAHATANG GABAY' : 'GUIDE OVERVIEW',
+                    isDark: isDark,
+                  ),
                   const SizedBox(height: 10),
                   TomoGlassCard(
                     isDark: isDark,
@@ -1922,7 +1950,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          result.displayName,
+                          localizedResultName,
                           style: GoogleFonts.dmSans(
                             fontSize: 24,
                             fontWeight: FontWeight.w800,
@@ -1957,17 +1985,15 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                           runSpacing: 8,
                           children: [
                             TomoChip(
-                              label: result.confidence >= 0.8
-                                  ? 'High Confidence'
-                                  : result.confidence >= 0.6
-                                      ? 'Moderate Confidence'
-                                      : 'Low Confidence',
+                              label: _localizedDiagnoseConfidenceBand(
+                                result.confidence,
+                              ),
                               color: result.confidence >= 0.6
                                   ? TomoPalette.primary
                                   : TomoPalette.amber,
                             ),
                             TomoChip(
-                              label: meta['badge']!,
+                              label: _localizedDiagnoseBadge(meta['badge']!),
                               color: isDark
                                   ? TomoPalette.textMuted
                                   : TomoPalette.lightTextSubtle,
@@ -1986,12 +2012,12 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     builder: (context, constraints) {
                       final causeCard = _buildDiagnoseDetailCard(
                         isDark: isDark,
-                        title: 'Cause',
+                        title: _isFilipino ? 'Sanhi' : 'Cause',
                         body: guide?.cause ?? meta['cause']!,
                       );
                       final descriptionCard = _buildDiagnoseDetailCard(
                         isDark: isDark,
-                        title: 'Description',
+                        title: _isFilipino ? 'Paglalarawan' : 'Description',
                         body: guide?.description ?? meta['description']!,
                       );
                       if (constraints.maxWidth < 360) {
@@ -2014,7 +2040,12 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                     },
                   ),
                   const SizedBox(height: 18),
-                  TomoSectionLabel('RECOMMENDED REMEDIES', isDark: isDark),
+                  TomoSectionLabel(
+                    _isFilipino
+                        ? 'MGA INIREREKOMENDANG HAKBANG'
+                        : 'RECOMMENDED REMEDIES',
+                    isDark: isDark,
+                  ),
                   const SizedBox(height: 10),
                   ...displayedRemedies.asMap().entries.map(
                         (entry) => Padding(
@@ -2058,7 +2089,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             ),
             Expanded(
               child: Text(
-                'Treatment Guide',
+                _isFilipino ? 'Gabay sa Paggamot' : 'Treatment Guide',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.dmSans(
                   fontSize: 18,
@@ -2142,6 +2173,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
     required String bannerText,
   }) {
     final result = _result!;
+    final modelDisplayName = _effectiveModelDisplayName;
     return SizedBox(
       height: 240,
       child: Stack(
@@ -2232,11 +2264,46 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             ),
           ),
           Positioned(
+            bottom: 38,
+            left: 18,
+            right: 18,
+            child: Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 230),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(isDark ? 0.34 : 0.22),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(isDark ? 0.12 : 0.22),
+                  ),
+                ),
+                child: Text(
+                  modelDisplayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withOpacity(0.90),
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
             bottom: 14,
             left: 0,
             right: 0,
             child: Text(
-              'scanned leaf image',
+              _isFilipino
+                  ? 'na-scan na larawan ng dahon'
+                  : 'scanned leaf image',
               textAlign: TextAlign.center,
               style: GoogleFonts.spaceMono(
                 fontSize: 10,
@@ -2342,7 +2409,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Care Reminder',
+            _isFilipino ? 'Paalala sa Pag-aalaga' : 'Care Reminder',
             style: GoogleFonts.dmSans(
               fontSize: 20,
               fontWeight: FontWeight.w800,
@@ -2375,7 +2442,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 ),
               ),
               child: Text(
-                'Add Reminder',
+                _isFilipino ? 'Magdagdag ng Paalala' : 'Add Reminder',
                 style: GoogleFonts.dmSans(fontWeight: FontWeight.w800),
               ),
             ),
@@ -2386,7 +2453,9 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
   }
 
   Widget _buildRedesignedChatCard(bool isDark) {
-    final diseaseLabel = _result?.displayName ?? 'this result';
+    final diseaseLabel = _result == null
+        ? (_isFilipino ? 'resultang ito' : 'this result')
+        : _localizedDiagnoseResultDisplayName(_result!.label);
     return TomoGlassCard(
       isDark: isDark,
       radius: 22,
@@ -2395,7 +2464,9 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Need a second opinion?',
+            _isFilipino
+                ? 'Kailangan ng pangalawang opinyon?'
+                : 'Need a second opinion?',
             style: GoogleFonts.dmSans(
               fontSize: 20,
               fontWeight: FontWeight.w800,
@@ -2435,7 +2506,7 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
                 ),
               ),
               child: Text(
-                'Ask Plant AI',
+                _isFilipino ? 'Magtanong sa Plant AI' : 'Ask Plant AI',
                 style: GoogleFonts.dmSans(fontWeight: FontWeight.w800),
               ),
             ),
@@ -2466,6 +2537,54 @@ class _DiagnoseResultScreenState extends State<DiagnoseResultScreen>
             ),
       ),
     );
+  }
+
+  String _localizedDiagnoseResultDisplayName(String label) {
+    final english = TFLiteService.getDisplayName(label);
+    if (!_isFilipino) return english;
+    final translated = _translations[english];
+    if (translated != null && translated.isNotEmpty) return translated;
+    switch (label) {
+      case 'Healthy':
+        return 'Malusog';
+      case 'Not_Tomato':
+        return 'Hindi Kamatis';
+      default:
+        return english;
+    }
+  }
+
+  String _localizedDiagnoseBannerText(String label) {
+    final localizedName =
+        _localizedDiagnoseResultDisplayName(label).toUpperCase();
+    final suffix = label == 'Healthy'
+        ? (_isFilipino ? 'KUMPIRMADO' : 'CONFIRMED')
+        : (_isFilipino ? 'NATUKOY' : 'DETECTED');
+    return '$localizedName $suffix';
+  }
+
+  String _localizedDiagnoseConfidenceBand(double confidence) {
+    if (confidence >= 0.8) {
+      return _isFilipino ? 'Mataas na Tiwala' : 'High Confidence';
+    }
+    if (confidence >= 0.6) {
+      return _isFilipino ? 'Katamtamang Tiwala' : 'Moderate Confidence';
+    }
+    return _isFilipino ? 'Mababang Tiwala' : 'Low Confidence';
+  }
+
+  String _localizedDiagnoseBadge(String badge) {
+    if (!_isFilipino) return badge;
+    switch (badge) {
+      case 'Pest':
+        return 'Peste';
+      case 'Healthy':
+        return 'Malusog';
+      case 'Review':
+        return 'Suriin';
+      default:
+        return badge;
+    }
   }
 
   Map<String, String> _diagnoseMetaForLabel(String label) {

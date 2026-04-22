@@ -1,18 +1,67 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
-import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
+
+class TFLiteModelSpec {
+  const TFLiteModelSpec({
+    required this.id,
+    required this.displayName,
+    required this.assetPath,
+    required this.modelVersion,
+    required this.description,
+    required this.supportsHeatmap,
+    required this.expectsNormalizedInput,
+  });
+
+  final String id;
+  final String displayName;
+  final String assetPath;
+  final String modelVersion;
+  final String description;
+  final bool supportsHeatmap;
+  final bool expectsNormalizedInput;
+}
 
 /// Shared TFLite inference service used by both Identify and Diagnose flows.
 ///
-/// Singleton — models are loaded once and shared across all result screens,
-/// avoiding repeated 3MB+ asset loads every time a scan result is displayed.
+/// Singleton: models are loaded once and shared across result screens, while
+/// still allowing the user to switch between bundled classifiers.
 class TFLiteService {
+  static const String _selectedModelPrefKey = 'selectedTfliteModelId';
+
+  static const TFLiteModelSpec mobileNetV3LargeModel = TFLiteModelSpec(
+    id: 'tomoleafnet_v6',
+    displayName: 'MobileNetV3 Large (v6)',
+    assetPath: 'assets/tomoleafnet_v6.tflite',
+    modelVersion: 'tomoleafnet_v6',
+    description: 'Default production classifier used by the current app.',
+    supportsHeatmap: true,
+    expectsNormalizedInput: false,
+  );
+
+  static const TFLiteModelSpec mobileNetV2Model = TFLiteModelSpec(
+    id: 'tomoleafnet_v2',
+    displayName: 'MobileNetV2 (v2)',
+    assetPath: 'assets/tomoleafnet_v2.tflite',
+    modelVersion: 'tomoleafnet_v2',
+    description: 'Alternative comparison model trained with the same pipeline.',
+    supportsHeatmap: false,
+    expectsNormalizedInput: true,
+  );
+
+  static const List<TFLiteModelSpec> availableModels = [
+    mobileNetV3LargeModel,
+    mobileNetV2Model,
+  ];
+
+  static final ValueNotifier<TFLiteModelSpec> selectedModelListenable =
+      ValueNotifier<TFLiteModelSpec>(mobileNetV3LargeModel);
+
   static const List<String> supportedLabels = [
     'Early_Blight',
     'Healthy',
@@ -20,7 +69,7 @@ class TFLiteService {
     'Leaf_Mold',
     'Not_Tomato',
   ];
-  // ── Singleton ──────────────────────────────────────────────────────
+
   static final TFLiteService _instance = TFLiteService._internal();
   factory TFLiteService() => _instance;
   TFLiteService._internal();
@@ -29,31 +78,115 @@ class TFLiteService {
   Interpreter? _camInterpreter;
   List<String>? _labels;
   Future<void>? _camLoadFuture;
+  Future<void>? _selectionLoadFuture;
+  bool _selectionLoaded = false;
+  String? _loadedModelId;
 
   /// Output index for predictions [1,5] in the CAM model.
   int _camPredIndex = 1;
+
   /// Output index for CAM maps [1,7,7,5] in the CAM model.
   int _camMapsIndex = 0;
 
   bool get isReady => _interpreter != null && _labels != null;
   List<String>? get labels => _labels;
+  TFLiteModelSpec get currentModel => selectedModelListenable.value;
+  String get currentModelVersion => currentModel.modelVersion;
+  bool get supportsHeatmap => currentModel.supportsHeatmap;
 
-  /// Load the TFLite model and class labels from assets.
-  Future<void> loadModel() async {
-    _interpreter = await Interpreter.fromAsset('assets/tomoleafnet_v6.tflite');
+  static TFLiteModelSpec modelFromId(String? id) {
+    for (final model in availableModels) {
+      if (model.id == id) return model;
+    }
+    return mobileNetV3LargeModel;
+  }
+
+  static String getModelDisplayName(String? modelVersion) {
+    return modelFromId(modelVersion).displayName.replaceFirst(
+          RegExp(r'\s*\(v\d+\)$'),
+          '',
+        );
+  }
+
+  Future<void> initializeModelSelection() async {
+    if (_selectionLoaded) return;
+    _selectionLoadFuture ??= _restoreSelectedModel();
+    await _selectionLoadFuture;
+  }
+
+  Future<void> _restoreSelectedModel() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final selectedId = prefs.getString(_selectedModelPrefKey);
+      final restoredModel = modelFromId(selectedId);
+      if (selectedModelListenable.value.id != restoredModel.id) {
+        selectedModelListenable.value = restoredModel;
+      }
+      _selectionLoaded = true;
+    } finally {
+      _selectionLoadFuture = null;
+    }
+  }
+
+  Future<void> setActiveModel(String modelId) async {
+    await initializeModelSelection();
+    final nextModel = modelFromId(modelId);
+    if (nextModel.id == currentModel.id) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_selectedModelPrefKey, nextModel.id);
+    selectedModelListenable.value = nextModel;
+
+    _closeLoadedModels();
+    await loadModel(forceReload: true);
+  }
+
+  /// Load the selected TFLite model and class labels from assets.
+  Future<void> loadModel({bool forceReload = false}) async {
+    await initializeModelSelection();
+    if (!forceReload &&
+        _interpreter != null &&
+        _labels != null &&
+        _loadedModelId == currentModel.id) {
+      return;
+    }
+
+    _interpreter?.close();
+    _interpreter = null;
+    _loadedModelId = null;
+
+    if (!currentModel.supportsHeatmap) {
+      _camInterpreter?.close();
+      _camInterpreter = null;
+      _camLoadFuture = null;
+    }
+
+    _interpreter = await Interpreter.fromAsset(currentModel.assetPath);
+    _loadedModelId = currentModel.id;
 
     final inputTensor = _interpreter!.getInputTensors()[0];
     final outputTensor = _interpreter!.getOutputTensors()[0];
-    print("Input shape: ${inputTensor.shape}, type: ${inputTensor.type}");
-    print("Output shape: ${outputTensor.shape}, type: ${outputTensor.type}");
+    debugPrint(
+      'Loaded ${currentModel.displayName}: input ${inputTensor.shape}, '
+      'type ${inputTensor.type}',
+    );
+    debugPrint(
+      'Output shape: ${outputTensor.shape}, type: ${outputTensor.type}',
+    );
 
     final labelData = await rootBundle.loadString('assets/labels.txt');
     _labels = labelData.split('\n').where((s) => s.trim().isNotEmpty).toList();
-    print("Labels loaded: $_labels");
+    debugPrint('Labels loaded: $_labels');
   }
 
   Future<void> _ensureCamModelLoaded() async {
+    if (!supportsHeatmap) {
+      throw UnsupportedError(
+        '${currentModel.displayName} does not include a bundled heatmap model.',
+      );
+    }
     if (_camInterpreter != null) return;
+
     _camLoadFuture ??= () async {
       _camInterpreter =
           await Interpreter.fromAsset('assets/tomoleafnet_v4_cam.tflite');
@@ -66,7 +199,7 @@ class TFLiteService {
           _camPredIndex = i;
         }
       }
-      print("CAM model loaded: pred=$_camPredIndex, cam=$_camMapsIndex");
+      debugPrint('CAM model loaded: pred=$_camPredIndex, cam=$_camMapsIndex');
     }();
 
     try {
@@ -78,19 +211,25 @@ class TFLiteService {
 
   /// Preprocess an image file into a Float32List suitable for the model.
   ///
-  /// Applies center-crop + bilinear resize to 224×224, then normalizes
-  /// pixels from [0, 255] to [-1, 1] to match MobileNetV3 training input.
+  /// Applies center-crop + bilinear resize to 224x224, then feeds either raw
+  /// pixels or [-1, 1] normalized values depending on the selected model.
   Future<Float32List> preprocessImage(String imagePath) async {
-    return compute(_preprocessImageFile, imagePath);
+    await initializeModelSelection();
+    return compute(
+      _preprocessImageFile,
+      _PreprocessImageRequest(
+        imagePath: imagePath,
+        expectsNormalizedInput: currentModel.expectsNormalizedInput,
+      ),
+    );
   }
 
   /// Run inference on the preprocessed image buffer.
   ///
-  /// Returns a [TFLiteResult] with the predicted label, index, and
-  /// confidence score.
+  /// Returns a [TFLiteResult] with the predicted label, index, and confidence.
   TFLiteResult runInference(Float32List inputBuffer) {
     if (_interpreter == null || _labels == null) {
-      throw Exception("Model not loaded. Call loadModel() first.");
+      throw Exception('Model not loaded. Call loadModel() first.');
     }
 
     final input = inputBuffer.reshape([1, 224, 224, 3]);
@@ -101,7 +240,6 @@ class TFLiteService {
 
     final probabilities = output[0] as List<double>;
 
-    // Find top-1 and top-2 predictions
     double top1Prob = -1.0;
     double top2Prob = -1.0;
     int top1Index = 0;
@@ -132,13 +270,6 @@ class TFLiteService {
   }
 
   /// Run inference on raw RGBA pixel bytes from a camera frame.
-  ///
-  /// [rgbaBytes] — raw RGBA pixel data.
-  /// [width], [height] — frame dimensions.
-  /// [viewfinderFraction] — the fraction of width used for the viewfinder box
-  ///   (e.g., 0.80 means 80% of width).
-  /// Extracts the square viewfinder region, resizes to 224×224, normalizes,
-  /// and returns the prediction.
   TFLiteResult runInferenceOnFrame(
     Uint8List rgbaBytes,
     int width,
@@ -146,36 +277,42 @@ class TFLiteService {
     double viewfinderFraction = 0.80,
   }) {
     if (_interpreter == null || _labels == null) {
-      throw Exception("Model not loaded. Call loadModel() first.");
+      throw Exception('Model not loaded. Call loadModel() first.');
     }
 
-    // Calculate the viewfinder box region (matches SquareViewfinderPainter)
     final int boxSize = (width * viewfinderFraction).round();
     final int cropX = (width - boxSize) ~/ 2;
     final int cropY = (height - boxSize) ~/ 2 - (40 * height ~/ 800);
 
-    // Clamp to valid bounds
     final int safeX = cropX.clamp(0, width - 1);
     final int safeY = cropY.clamp(0, height - 1);
     final int safeW = boxSize.clamp(1, width - safeX);
     final int safeH = boxSize.clamp(1, height - safeY);
 
     const int targetSize = 224;
+    final expectsNormalizedInput = currentModel.expectsNormalizedInput;
     final inputBuffer = Float32List(1 * targetSize * targetSize * 3);
     int bufIdx = 0;
 
     for (int y = 0; y < targetSize; y++) {
       for (int x = 0; x < targetSize; x++) {
-        // Map to source pixel in the viewfinder region (nearest neighbor for speed)
         final int srcX = safeX + (x * safeW ~/ targetSize);
         final int srcY = safeY + (y * safeH ~/ targetSize);
         final int pixelIdx = (srcY * width + srcX) * 4;
 
         if (pixelIdx + 2 < rgbaBytes.length) {
-          // Feed raw [0, 255] — TFLite model has built-in Rescaling layer
-          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx].toDouble();       // R
-          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx + 1].toDouble();   // G
-          inputBuffer[bufIdx++] = rgbaBytes[pixelIdx + 2].toDouble();   // B
+          final r = rgbaBytes[pixelIdx].toDouble();
+          final g = rgbaBytes[pixelIdx + 1].toDouble();
+          final b = rgbaBytes[pixelIdx + 2].toDouble();
+          if (expectsNormalizedInput) {
+            inputBuffer[bufIdx++] = r / 127.5 - 1.0;
+            inputBuffer[bufIdx++] = g / 127.5 - 1.0;
+            inputBuffer[bufIdx++] = b / 127.5 - 1.0;
+          } else {
+            inputBuffer[bufIdx++] = r;
+            inputBuffer[bufIdx++] = g;
+            inputBuffer[bufIdx++] = b;
+          }
         } else {
           inputBuffer[bufIdx++] = 0.0;
           inputBuffer[bufIdx++] = 0.0;
@@ -195,11 +332,6 @@ class TFLiteService {
   }
 
   /// Generate a CAM (Class Activation Map) heatmap for the given image.
-  ///
-  /// Uses the dual-output CAM model that produces both predictions and a
-  /// [1, 7, 7, 5] CAM tensor in a single forward pass — no extra inferences.
-  /// The 7×7 CAM is bilinearly upscaled to 224×224 and blended with the
-  /// original image. Returns PNG bytes.
   Future<Uint8List> generateHeatmap(String imagePath, int classIndex) async {
     if (!isReady) await loadModel();
     await _ensureCamModelLoaded();
@@ -210,15 +342,14 @@ class TFLiteService {
     const int camSize = 7;
     const int numClasses = 5;
 
-    // ── Run CAM model (single inference) ─────────────────────────────
     if (_camInterpreter == null) {
-      throw Exception("CAM model not loaded");
+      throw Exception('CAM model not loaded');
     }
 
     final input = baseBuffer.reshape([1, imgSize, imgSize, 3]);
 
-    // Allocate output buffers for both outputs
-    final predOutput = List.filled(1 * numClasses, 0.0).reshape([1, numClasses]);
+    final predOutput =
+        List.filled(1 * numClasses, 0.0).reshape([1, numClasses]);
     final camOutput = List.generate(
       1,
       (_) => List.generate(
@@ -233,11 +364,9 @@ class TFLiteService {
 
     _camInterpreter!.runForMultipleInputs([input], outputs);
 
-    // Extract the 7×7 CAM for the predicted class
     final preds = predOutput[0] as List<double>;
     int predClass = classIndex;
     if (predClass < 0 || predClass >= numClasses) {
-      // Fallback: use argmax of predictions
       double maxP = -1;
       for (int i = 0; i < preds.length; i++) {
         if (preds[i] > maxP) {
@@ -247,19 +376,17 @@ class TFLiteService {
       }
     }
 
-    // Extract 7×7 CAM grid for the predicted class
     final cam7x7 = List.generate(camSize, (y) {
       return List.generate(camSize, (x) {
-        final double v = camOutput[0][y][x][predClass];
-        return v > 0 ? v : 0.0; // ReLU
+        final double value = camOutput[0][y][x][predClass];
+        return value > 0 ? value : 0.0;
       });
     });
 
-    // Normalize to [0, 1]
     double camMax = 0.0;
     for (final row in cam7x7) {
-      for (final v in row) {
-        if (v > camMax) camMax = v;
+      for (final value in row) {
+        if (value > camMax) camMax = value;
       }
     }
     if (camMax > 0) {
@@ -281,20 +408,26 @@ class TFLiteService {
 
   /// Dispose interpreters.
   void dispose() {
+    _closeLoadedModels();
+  }
+
+  void _closeLoadedModels() {
     _interpreter?.close();
     _interpreter = null;
+    _loadedModelId = null;
+    _labels = null;
     _camInterpreter?.close();
     _camInterpreter = null;
     _camLoadFuture = null;
+    _camPredIndex = 1;
+    _camMapsIndex = 0;
   }
 
-  // ── Confidence helpers ──────────────────────────────────────────────
-
   static String getConfidenceLabel(double confidence) {
-    if (confidence >= 0.80) return "High Confidence";
-    if (confidence >= 0.60) return "Moderate Confidence";
-    if (confidence >= 0.40) return "Low Confidence";
-    return "Very Low Confidence";
+    if (confidence >= 0.80) return 'High Confidence';
+    if (confidence >= 0.60) return 'Moderate Confidence';
+    if (confidence >= 0.40) return 'Low Confidence';
+    return 'Very Low Confidence';
   }
 
   static Color getConfidenceColor(double confidence) {
@@ -304,30 +437,24 @@ class TFLiteService {
     return const Color(0xFFF44336);
   }
 
-  // ── Threshold tier helpers (PDF steps 5–8) ──────────────────────────
-
-  /// Returns the threshold tier label for the result display header.
   static String getThresholdLabel(String label, double confidence) {
     if (label == 'Healthy') {
       if (confidence >= 0.80) return 'Confident Healthy';
       return 'Monitor';
     }
-    // Disease
     if (confidence >= 0.85) return 'Confirmed';
     return 'Likely';
   }
 
-  /// Returns the threshold tier color.
   static Color getThresholdColor(String label, double confidence) {
     if (label == 'Healthy') {
-      if (confidence >= 0.80) return const Color(0xFF4CAF50); // green
-      return const Color(0xFFFFC107); // amber
+      if (confidence >= 0.80) return const Color(0xFF4CAF50);
+      return const Color(0xFFFFC107);
     }
-    if (confidence >= 0.85) return const Color(0xFFF44336); // red
-    return const Color(0xFFFF9800); // orange
+    if (confidence >= 0.85) return const Color(0xFFF44336);
+    return const Color(0xFFFF9800);
   }
 
-  /// Returns the threshold tier title text (PDF friendly wording).
   static String getThresholdTitle(String label, double confidence) {
     if (label == 'Healthy') {
       if (confidence >= 0.80) return 'Great news!';
@@ -338,7 +465,6 @@ class TFLiteService {
     return 'Heads up! It might be $name.';
   }
 
-  /// Returns the threshold tier body text (PDF friendly wording).
   static String getThresholdBody(String label, double confidence) {
     if (label == 'Healthy') {
       if (confidence >= 0.80) {
@@ -352,14 +478,13 @@ class TFLiteService {
     return 'We\'re seeing some signs of this issue. Let\'s review the symptoms together to make sure.';
   }
 
-  /// Returns the threshold tier icon string.
   static String getThresholdIcon(String label, double confidence) {
     if (label == 'Healthy') {
-      if (confidence >= 0.80) return '🟢';
-      return '🟡';
+      if (confidence >= 0.80) return 'GREEN';
+      return 'YELLOW';
     }
-    if (confidence >= 0.85) return '🔴';
-    return '🟠';
+    if (confidence >= 0.85) return 'RED';
+    return 'ORANGE';
   }
 
   static String getDisplayName(String label) {
@@ -378,7 +503,6 @@ class TFLiteService {
     return index >= 0 ? index : 0;
   }
 
-  /// Stable threshold-state identifiers for analytics and contribution routing.
   static String getThresholdState(String label, double confidence) {
     if (label == 'Healthy') {
       return confidence >= 0.80 ? 'confidentHealthy' : 'monitor';
@@ -387,7 +511,6 @@ class TFLiteService {
     return confidence >= 0.85 ? 'confidentDisease' : 'likely';
   }
 
-  /// Internal mapping of the app's PDF-inspired threshold states.
   static int getThresholdStateNumber(String label, double confidence) {
     switch (getThresholdState(label, confidence)) {
       case 'likely':
@@ -406,17 +529,6 @@ class TFLiteService {
 
 /// Result of a single TFLite inference run.
 class TFLiteResult {
-  final String label;
-  final int index;
-  final double confidence;
-  final String? secondLabel;
-  final int? secondIndex;
-  final double secondConfidence;
-
-  /// Gap between top-1 and top-2 confidence. A small gap (<0.15) means the
-  /// model is uncertain even if the absolute confidence is above 60%.
-  final double confidenceGap;
-
   const TFLiteResult({
     required this.label,
     required this.index,
@@ -427,18 +539,34 @@ class TFLiteResult {
     this.confidenceGap = 1.0,
   });
 
-  /// True when the model's top two predictions are close together,
-  /// indicating ambiguity regardless of absolute confidence.
-  bool get isAmbiguous => confidenceGap < 0.15 && confidence < 0.80;
+  final String label;
+  final int index;
+  final double confidence;
+  final String? secondLabel;
+  final int? secondIndex;
+  final double secondConfidence;
 
+  /// Gap between top-1 and top-2 confidence.
+  final double confidenceGap;
+
+  bool get isAmbiguous => confidenceGap < 0.15 && confidence < 0.80;
   String get displayName => TFLiteService.getDisplayName(label);
   String get confidenceLabel => TFLiteService.getConfidenceLabel(confidence);
-  String get confidencePercent =>
-      '${(confidence * 100).toStringAsFixed(1)}%';
+  String get confidencePercent => '${(confidence * 100).toStringAsFixed(1)}%';
   String get thresholdState =>
       TFLiteService.getThresholdState(label, confidence);
   int get thresholdStateNumber =>
       TFLiteService.getThresholdStateNumber(label, confidence);
+}
+
+class _PreprocessImageRequest {
+  const _PreprocessImageRequest({
+    required this.imagePath,
+    required this.expectsNormalizedInput,
+  });
+
+  final String imagePath;
+  final bool expectsNormalizedInput;
 }
 
 class _HeatmapBuildData {
@@ -451,14 +579,15 @@ class _HeatmapBuildData {
   final List<List<double>> cam7x7;
 }
 
-Float32List _preprocessImageFile(String imagePath) {
-  final bytes = File(imagePath).readAsBytesSync();
+Float32List _preprocessImageFile(_PreprocessImageRequest request) {
+  final bytes = File(request.imagePath).readAsBytesSync();
   final decoded = img.decodeImage(bytes);
   if (decoded == null) {
-    throw Exception("Failed to decode image");
+    throw Exception('Failed to decode image');
   }
 
-  final minDim = decoded.width < decoded.height ? decoded.width : decoded.height;
+  final minDim =
+      decoded.width < decoded.height ? decoded.width : decoded.height;
   final cropX = (decoded.width - minDim) ~/ 2;
   final cropY = (decoded.height - minDim) ~/ 2;
   final cropped = img.copyCrop(
@@ -480,12 +609,19 @@ Float32List _preprocessImageFile(String imagePath) {
   for (int y = 0; y < 224; y++) {
     for (int x = 0; x < 224; x++) {
       final pixel = resized.getPixel(x, y);
-      // Feed raw [0, 255] — the TFLite model has a built-in Rescaling layer
-      // that normalizes to [-1, 1] internally. MobileNetV3's preprocess_input
-      // is a no-op for the same reason.
-      inputBuffer[idx++] = pixel.r.toDouble();
-      inputBuffer[idx++] = pixel.g.toDouble();
-      inputBuffer[idx++] = pixel.b.toDouble();
+      final r = pixel.r.toDouble();
+      final g = pixel.g.toDouble();
+      final b = pixel.b.toDouble();
+
+      if (request.expectsNormalizedInput) {
+        inputBuffer[idx++] = r / 127.5 - 1.0;
+        inputBuffer[idx++] = g / 127.5 - 1.0;
+        inputBuffer[idx++] = b / 127.5 - 1.0;
+      } else {
+        inputBuffer[idx++] = r;
+        inputBuffer[idx++] = g;
+        inputBuffer[idx++] = b;
+      }
     }
   }
   return inputBuffer;
@@ -520,7 +656,6 @@ Uint8List _buildHeatmapPng(_HeatmapBuildData data) {
 
       final lutIdx = (val * 255).round().clamp(0, 255);
       final hsvColor = lut[lutIdx];
-      // baseBuffer is already [0, 255] (raw pixels, model handles normalization)
       final origR = data.baseBuffer[srcIdx].clamp(0, 255).round();
       final origG = data.baseBuffer[srcIdx + 1].clamp(0, 255).round();
       final origB = data.baseBuffer[srcIdx + 2].clamp(0, 255).round();
@@ -544,7 +679,10 @@ List<int> _hsvToRgbValue(double h, double s, double v) {
   final p = v * (1 - s);
   final q = v * (1 - f * s);
   final t = v * (1 - (1 - f) * s);
-  double r, g, b;
+  double r;
+  double g;
+  double b;
+
   switch (i % 6) {
     case 0:
       r = v;
@@ -577,5 +715,6 @@ List<int> _hsvToRgbValue(double h, double s, double v) {
       b = q;
       break;
   }
+
   return [(r * 255).round(), (g * 255).round(), (b * 255).round()];
 }
